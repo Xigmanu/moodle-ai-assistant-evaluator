@@ -1,0 +1,7 @@
+id: PI_VOLA_HY_CE
+man_name: "Hybrid Retrieval auf beiden Collections plus Cross-Encoder zur besseren Sortierung der Treffer."
+retrieval: "dense, sparse"
+is_cross_encoder_rerank: true
+collections:
+  - hollstein_collection_labor
+  - hollstein_collection_vorlesung

@@ -1,0 +1,6 @@
+id: PI_NO_LLM_NCE
+man_name: "Frage nur mit dem einfachen Professor-Prompt, ohne zusätzliches RAG. Dient als Baseline."
+retrieval: ""
+is_cross_encoder_rerank: false
+collections: []
+sys_prompt_override: "Du agierst als erfahrener und freundlicher Professor in Elektrotechnik. Dein maximales Token-Budget liegt bei 150 Token (ca. 110 Wörter). Antworte sachlich, präzise und übersichtlich in 5 bis 8 Sätzen. Überschreite niemals die Anzahl der Maximalen 150 Tokens."

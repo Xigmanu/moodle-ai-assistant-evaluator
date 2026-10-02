@@ -1,0 +1,6 @@
+id: PI_VO_HY_CE
+man_name: "Hybrid + Cross-Encoder, aber nur mit Vorlesungsunterlagen."
+retrieval: "dense, sparse"
+is_cross_encoder_rerank: true
+collections:
+  - hollstein_collection_vorlesung

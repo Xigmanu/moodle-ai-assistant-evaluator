@@ -1,0 +1,7 @@
+id: PI_VOLA_SP_NCE
+man_name: "Labor und Vorlesung gemeinsam, aber Suche über Sparse Retrieval."
+retrieval: sparse
+is_cross_encoder_rerank: false
+collections:
+  - hollstein_collection_labor
+  - hollstein_collection_vorlesung

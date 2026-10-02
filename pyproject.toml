@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling >= 1.31"]
+build-backend = "hatchling.build"
+
+[project]
+name = "moodle-ai-assistant-evaluator"
+description = "An evaluator for an AI assistant integrated in a Moodle cource"
+dynamic = ["version"]
+
+requires-python = ">=3.12"
+classifiers = [
+    "Private :: Do Not Upload"
+]
+
+dependencies = [
+    "deepeval == 4.*",
+    "python-dotenv == 1.*",
+    "httpx == 0.28.*",
+    "openpyxl == 3.*",
+    "pandas == 3.*",
+    "pyYAML == 6.*"
+]
+
+[project.optional-dependencies]
+dev = [
+    "autoflake", 
+    "black", 
+    "isort"
+]
+
+[project.scripts]
+evaluator = "evaluator.cmd:main"
+
+[tool.hatch.version]
+path = "src/evaluator/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/evaluator"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["src"]

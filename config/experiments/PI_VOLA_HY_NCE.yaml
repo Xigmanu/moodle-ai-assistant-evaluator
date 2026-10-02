@@ -1,0 +1,7 @@
+id: PI_VOLA_HY_NCE
+man_name: "Labor und Vorlesung gemeinsam, Dense und Sparse werden kombiniert."
+retrieval: "dense, sparse"
+is_cross_encoder_rerank: false
+collections:
+  - hollstein_collection_labor
+  - hollstein_collection_vorlesung

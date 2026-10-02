@@ -1,0 +1,6 @@
+id: PI_LA_DE_NCE
+man_name: "Nur Laborunterlagen, gesucht über Dense Retrieval."
+retrieval: dense
+is_cross_encoder_rerank: false
+collections:
+  - hollstein_collection_labor

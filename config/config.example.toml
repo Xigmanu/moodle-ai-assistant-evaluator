@@ -1,0 +1,32 @@
+[evaluator]
+test_threshold = 0.7                        # Value between 0.0 and 1.0
+
+# Intervals are in seconds
+on_llm_request_error_max_retries = 5
+on_llm_request_error_retry_interval = 30
+
+on_socket_error_ping_max_retries=240
+on_socket_error_ping_retry_interval=30
+
+max_concurrent_test_case_evaluations = 10
+
+
+[model]                                     # Replace with actual model names and urls
+
+[model.gen]                                 # Model that is used to generate actual outputs for testing
+name = ""
+base_url = ""
+# rpm = 20
+# temperature = 1
+# top_p = 0.1
+# seed = 42
+# max_tokens = 1738
+
+[model.eval]                                # Model that is used by DeepEval
+name = ""
+base_url = ""
+# rpm = 20
+# temperature = 1
+# top_p = 0.1
+# seed = 42
+# max_tokens = 1738

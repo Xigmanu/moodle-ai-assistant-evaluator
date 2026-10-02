@@ -1,0 +1,7 @@
+id: PI_VOLA_DE_NCE
+man_name: "Labor und Vorlesung gemeinsam, weiterhin nur Dense Retrieval."
+retrieval: dense
+is_cross_encoder_rerank: false
+collections:
+  - hollstein_collection_labor
+  - hollstein_collection_vorlesung
