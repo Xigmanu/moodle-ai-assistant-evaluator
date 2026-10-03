@@ -24,7 +24,7 @@ from .workspace import EvaluationMetadata
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class MetricResult:
     name: str
     score: float | None
@@ -34,7 +34,7 @@ class MetricResult:
     error: str | None
 
 
-@dataclass
+@dataclass(frozen=True)
 class EvaluationResult:
     index: int
     exchange: LLMExchange
@@ -42,7 +42,7 @@ class EvaluationResult:
 
 
 class EvaluationCancelled(Exception):
-    """"""
+    """Raised when an evaluation is cancelled by a user."""
 
 
 class Evaluator:
@@ -53,6 +53,11 @@ class Evaluator:
         max_workers: int,
         max_attempts: int = 2,
     ) -> None:
+        if max_workers < 30:
+            logger.warning(
+                "Running evaluation on less than 30 worker threads. This will cause longer evaluation times"
+            )
+
         self._judge_client = judge_client
         self._threshold = threshold
         self._max_workers = max_workers
@@ -67,55 +72,49 @@ class Evaluator:
         results: dict[int, list[MetricResult | None]] = {}
         futures: dict[Future[MetricResult], tuple[int, int]] = {}
 
-        pool = ThreadPoolExecutor(
+        with ThreadPoolExecutor(
             max_workers=self._max_workers, thread_name_prefix=f"eval-{exp_id}"
-        )
-        try:
+        ) as pool:
             for case_i, exch in enumerate(exchanges):
-                if not exch.rag_chunks:
-                    logger.warning(
-                        "Experiment '%s', case '%s': RAG metrics will fail due missing RAG chunks",
-                        exp_id,
-                        exch.id,
-                    )
-
-                judge = DeepEvalJudgeModel(
-                    client=self._judge_client,
-                    eval_metadata=eval_metadata,
-                    exp_id=exp_id,
-                    case_id=exch.id,
-                )
-
-                metrics = self._build_metrics(judge)
-                test_case = self._build_test_case(exch)
-
-                if not eval_metadata.metrics:
-                    eval_metadata.metrics.extend(self._metric_name(m) for m in metrics)
+                metrics = self._prepare_case(exch, exp_id, eval_metadata)
 
                 results[case_i] = [None] * len(metrics)
-                for metric_i, metric in enumerate(metrics):
-                    fut = pool.submit(
-                        self._measure, metric, test_case, exch.id, exp_id, cancel_event
-                    )
-                    futures[fut] = (case_i, metric_i)
-            for fut in as_completed(futures):
-                case_i, metric_i = futures[fut]
-                results[case_i][metric_i] = fut.result()
 
-        except BaseException:
-            logger.info(
-                "Experiment '%s': Evaluation aborted. Waiting for running metrics to finish...",
-                exp_id,
-            )
-            cancel_event.set()
-            raise
-        finally:
-            pool.shutdown(wait=True, cancel_futures=True)
+                test_case = self._build_test_case(exch)
+
+                for metric_i, metric in enumerate(metrics):
+                    future = pool.submit(
+                        self._measure,
+                        metric,
+                        test_case,
+                        case_id=exch.id,
+                        exp_id=exp_id,
+                        cancel_event=cancel_event,
+                    )
+                    futures[future] = (case_i, metric_i)
+
+            try:
+                for future in as_completed(futures):
+                    case_i, metric_i = futures[future]
+                    results[case_i][metric_i] = future.result()
+            except BaseException:
+                logger.info(
+                    "Experiment '%s': Evaluation aborted. Waiting for running metrics to finish...",
+                    exp_id,
+                )
+                cancel_event.set()
+                for future in futures:
+                    future.cancel()
+
+                raise
 
         logger.info("Experiment '%s': Evaluation finished", exp_id)
+
         return [
             EvaluationResult(
-                index=i, exchange=exch, metrics=[m for m in results[i] if m is not None]
+                index=i,
+                exchange=exch,
+                metrics=[metric for metric in results[i] if metric is not None],
             )
             for i, exch in enumerate(exchanges)
         ]
@@ -134,6 +133,31 @@ class Evaluator:
             retrieval_context=exch.rag_chunks,
             context=exch.rag_chunks,
         )
+
+    def _prepare_case(
+        self, exch: LLMExchange, exp_id: str, eval_metadata: EvaluationMetadata
+    ) -> list[BaseMetric]:
+        if not exch.rag_chunks:
+            logger.warning(
+                "Experiment '%s', case '%s': "
+                "RAG metrics may fail because no RAG chunks are available",
+                exp_id,
+                exch.id,
+            )
+
+        judge = DeepEvalJudgeModel(
+            client=self._judge_client,
+            eval_metadata=eval_metadata,
+            exp_id=exp_id,
+            case_id=exch.id,
+        )
+
+        metrics = self._build_metrics(judge)
+
+        if not eval_metadata.metrics:
+            eval_metadata.metrics.extend(self._metric_name(metric) for metric in metrics)
+
+        return metrics
 
     def _measure(
         self,
@@ -161,7 +185,6 @@ class Evaluator:
                     exp_id,
                     case_id,
                     name,
-                    e,
                 )
                 continue
 
@@ -220,17 +243,3 @@ class Evaluator:
             FaithfulnessMetric(threshold=self._threshold, model=model, async_mode=False),
             HallucinationMetric(threshold=self._threshold, model=model, async_mode=False),
         ]
-
-
-# TODO Temporary. Remove later
-def run_evaluation(
-    threshold: float,
-    judge_client: RateLimitedLLMClient,
-    exchanges: list[LLMExchange],
-    max_workers: int,
-    eval_metadata: EvaluationMetadata,
-    exp_id: str,
-) -> list[EvaluationResult]:
-    return Evaluator(
-        judge_client=judge_client, threshold=threshold, max_workers=max_workers
-    ).evaluate(exchanges, exp_id=exp_id, eval_metadata=eval_metadata)

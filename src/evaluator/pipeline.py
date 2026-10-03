@@ -153,4 +153,3 @@ def collect_llm_responses(
 
     logger.info("Collected %s response(s).", len(exchanges))
     return exchanges
-

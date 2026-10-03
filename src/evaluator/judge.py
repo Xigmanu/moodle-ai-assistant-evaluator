@@ -1,4 +1,6 @@
-from typing import TypeVar
+import asyncio
+from typing import Any, TypeVar
+import logging
 
 from deepeval.models import DeepEvalBaseLLM
 from pydantic import BaseModel, ValidationError
@@ -12,6 +14,8 @@ from .config import ModelConfig
 from .logging_util import log_err_with_raise
 from .workspace import EvaluationMetadata
 
+logger = logging.getLogger(__name__)
+
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
@@ -21,7 +25,7 @@ def eval_req_body_builder() -> RequestBodyBuilderCallback:
         prompt: str,
         sys_prompt: str | None,
         schema: type[BaseModel] | None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         body = openai_req_body_builder(model_conf, prompt, sys_prompt, schema)
         body["chat_template_kwargs"] = {"reasoning_strength": model_conf.reasoning_strength}
         return body
@@ -49,7 +53,7 @@ class DeepEvalJudgeModel(DeepEvalBaseLLM):
         return self._client.get_model_name()
 
     @staticmethod
-    def _extract_content(resp: dict) -> str:
+    def _extract_content(resp: dict[str, Any]) -> str:
         try:
             content = resp["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
@@ -75,13 +79,13 @@ class DeepEvalJudgeModel(DeepEvalBaseLLM):
             eval_metadata=self._eval_metadata,
         )
 
-        text = self._extract_content(resp)
+        content = self._extract_content(resp)
 
         if schema is None:
-            return text
+            return content
 
         try:
-            return schema.model_validate_json(text)
+            return schema.model_validate_json(content)
         except ValidationError:
             log_err_with_raise(
                 logger,
