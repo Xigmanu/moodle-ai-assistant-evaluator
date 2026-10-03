@@ -40,6 +40,9 @@ def _configure_eval_logger(eval_dir_path: Path, is_stream: bool) -> None:
         handlers=handlers,
     )
 
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+
 
 def _init_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Volt AI tutor evaluation tool")
@@ -117,9 +120,13 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     prompt = prompt_path.read_text(encoding="utf-8").strip()
 
     input_path = Path(args.input).resolve()
-    test_cases = load_test_cases(input_path)
 
-    logger.debug("Parsed input files")
+    logger.info(
+        "Starting an evaluation suite with the following configuration:\n%s",
+        ws.global_config.pretty_print(),
+    )
+
+    test_cases = load_test_cases(input_path)
 
     runner = EvaluationRunner(ws=ws, sys_prompt=prompt, test_cases=test_cases)
 

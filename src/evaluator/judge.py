@@ -1,6 +1,6 @@
 import asyncio
-from typing import Any, TypeVar
 import logging
+from typing import Any, TypeVar
 
 from deepeval.models import DeepEvalBaseLLM
 from pydantic import BaseModel, ValidationError

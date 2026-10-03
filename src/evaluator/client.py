@@ -173,6 +173,7 @@ class RateLimitedLLMClient:
             verify=self._verify_tls,
         )
 
+        logger.debug("HTTP %s: Captured LLM answer", res.status_code)
         self._write_exchange_dump(
             body=body,
             res=res,

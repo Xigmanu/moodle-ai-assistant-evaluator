@@ -126,12 +126,7 @@ class EvaluationRunner:
         return experiments
 
     def run_evaluation(self, eval_metadata: EvaluationMetadata) -> int:
-        logger.info(
-            "Starting an evaluation suite with the following configuration:\n%s",
-            self._ws.global_config.pretty_print(),
-        )
         eval_metadata.start_ts = datetime.now()
-
         try:
             experiments = self._load_experiments(eval_metadata)
             evaluator = self._create_evaluator()
