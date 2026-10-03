@@ -142,7 +142,7 @@ def _cmd_results_list(args: argparse.Namespace, ws: Workspace) -> int:
     for meta in metadata:
         row = [
             meta.id,
-            meta.status.upper(),
+            meta.status.upper() if meta.status is not None else "UNKNOWN",
             meta.start_ts or "N/A",
             meta.end_ts or "N/A",
             _fmt_duration(start=meta.start_ts, end=meta.end_ts),
@@ -197,7 +197,7 @@ def _cmd_results_clear(args: argparse.Namespace, ws: Workspace) -> int:
             m.root_path
             for m in metadata
             if m.status
-            in [EvaluationStatus.ERROR, EvaluationStatus.ABORTED, EvaluationStatus.UNKNOWN]
+            in [EvaluationStatus.ERROR, EvaluationStatus.ABORTED, EvaluationStatus.UNKNOWN, None]
         ]
         if not args.is_purge
         else [m.root_path for m in metadata]

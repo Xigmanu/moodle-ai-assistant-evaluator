@@ -10,8 +10,9 @@ from .client import (
     RateLimiter,
     RequestBodyBuilderCallback,
 )
-from .eval import eval_req_body_builder, run_evaluation
+from .eval import EvaluationCancelled, run_evaluation
 from .export import export_eval_results, merge_experiment_results
+from .judge import eval_req_body_builder
 from .pipeline import collect_llm_responses, rag_req_body_builder
 from .workspace import EvaluationMetadata, EvaluationStatus, ExperimentConfig, Workspace
 
@@ -77,7 +78,7 @@ class EvaluationRunner:
         eval_results = run_evaluation(
             threshold=config.test_threshold,
             judge_client=judge_client,
-            responses=responses,
+            exchanges=responses,
             max_workers=config.max_concurrent_test_case_evaluations,
             eval_metadata=eval_metadata,
             exp_id=exp.id,
@@ -112,7 +113,7 @@ class EvaluationRunner:
             )
             eval_metadata.status = EvaluationStatus.OK
 
-        except KeyboardInterrupt:
+        except EvaluationCancelled:
             eval_metadata.status = EvaluationStatus.ABORTED
             return 130
         except Exception as e:

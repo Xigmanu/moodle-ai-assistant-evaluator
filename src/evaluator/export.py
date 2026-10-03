@@ -13,6 +13,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from .catalogue import ANSWER_COL, ID_COL, QUERY_COL, QUERY_TOPIC, QUERY_TYPE, VL_COL
 from .eval import EvaluationResult
+from .workspace import EvaluationMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +272,7 @@ def _get_file_paths_r(dir: Path) -> list[Path]:
     return sorted(p for p in dir.rglob("*_results.xlsx") if p.is_file())
 
 
-def merge_experiment_results(eval_metadata: EvaluationResult, tgt: Path) -> None:
+def merge_experiment_results(eval_metadata: EvaluationMetadata, tgt: Path) -> None:
     input_paths = _get_file_paths_r(eval_metadata.root_path / "experiments")
     if not input_paths:
         logger.warning("No experiment results were found. Aborting merge")
@@ -292,7 +293,7 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
 
     records = []
     for result in results:
-        resp = result.response
+        resp = result.exchange
         record = {
             ID_COL: resp.id,
             VL_COL: resp.vl,
