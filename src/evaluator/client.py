@@ -70,7 +70,9 @@ def openai_req_body_builder(
 class RateLimiter:
     def __init__(self, rpm: int):
         if rpm <= 0:
-            raise ValueError("Failed to initialize rate limiter. Requests per minute must be greater than zero")
+            raise ValueError(
+                "Failed to initialize rate limiter. Requests per minute must be greater than zero"
+            )
         self._interval = 60.0 / rpm
         self._lock = Lock()
         self._next_allowed = 0.0

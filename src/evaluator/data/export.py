@@ -284,8 +284,7 @@ def merge_experiment_results(eval_metadata: EvaluationMetadata, tgt: Path) -> No
 
 
 def export_eval_results(exp_id: str, results: list[EvaluationResult], output_path: Path) -> None:
-    if not results:
-        log_err_with_raise(logger, "No evaluation results to export.")
+    assert results is not None, "no evaluation results to export"
 
     metric_cols: list[str] = []
     for result in results:
@@ -295,15 +294,15 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
 
     records = []
     for result in results:
-        resp = result.exchange
+        exch = result.exchange
         record = {
-            ID_COL: resp.id,
-            VL_COL: resp.vl,
-            QUERY_TYPE: resp.query_type,
-            QUERY_TOPIC: resp.topic,
-            QUERY_COL: resp.query_text,
-            ANSWER_COL: resp.golden_answer,
-            _ACTUAL_OUTPUT_COL: resp.llm_response,
+            ID_COL: exch.case.id,
+            VL_COL: exch.case.vl,
+            QUERY_TYPE: exch.case.query_type,
+            QUERY_TOPIC: exch.case.query_topic,
+            QUERY_COL: exch.case.query,
+            ANSWER_COL: exch.case.exp_answer,
+            _ACTUAL_OUTPUT_COL: exch.llm_response,
         }
         for metric in result.metrics:
             record[metric.name] = str(metric.score)

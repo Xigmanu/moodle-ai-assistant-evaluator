@@ -9,33 +9,16 @@ from .client import (
     RequestBodyBuilderCallback,
     openai_req_body_builder,
 )
-from .data import EvaluationMetadata, ExperimentConfig, ModelConfig
-from .data.catalogue import (
-    ANSWER_COL,
-    ID_COL,
-    QUERY_COL,
-    QUERY_TOPIC,
-    QUERY_TYPE,
-    VL_COL,
-)
+from .data import EvaluationMetadata, ExperimentConfig, ModelConfig, TestCase
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class LLMExchange:
-    id: str
-    vl: str
-    topic: str
-    query_type: str
-    query_text: str
-    golden_answer: str
+    case: TestCase
     llm_response: str
     rag_chunks: list[str]
-
-    @property
-    def test_case_name(self) -> str:
-        return f"ID={self.id} | VL={self.vl}"
 
 
 def rag_req_body_builder(exp_conf: ExperimentConfig) -> RequestBodyBuilderCallback:
@@ -55,9 +38,11 @@ def rag_req_body_builder(exp_conf: ExperimentConfig) -> RequestBodyBuilderCallba
 
     return builder
 
+
 def _log_err_with_raise(logger: logging.Logger, msg: str) -> None:
     logger.error(msg)
     raise ValueError(msg)
+
 
 def _extract_message_content(resp: dict, case_id: str) -> str:
     try:
@@ -112,7 +97,7 @@ def _parse_verbose_payload(content: str, case_id: str) -> tuple[str, list[str]]:
 
 def collect_llm_responses(
     client: RateLimitedLLMClient,
-    test_cases: list[dict],
+    test_cases: list[TestCase],
     sys_prompt: str | None,
     exp_id: str,
     eval_metadata: EvaluationMetadata,
@@ -120,9 +105,9 @@ def collect_llm_responses(
     total = len(test_cases)
 
     exchanges: list[LLMExchange] = []
-    for position, row in enumerate(test_cases, start=1):
-        case_id = row[ID_COL]
-        query = row[QUERY_COL]
+    for position, case in enumerate(test_cases, start=1):
+        case_id = case.id
+        query = case.query
         logger.info("[%s/%s] Fetching LLM answer for case [%s] ...", position, total, case_id)
 
         raw = client.retrying_call(
@@ -141,12 +126,7 @@ def collect_llm_responses(
 
         exchanges.append(
             LLMExchange(
-                id=case_id,
-                vl=row[VL_COL],
-                topic=row[QUERY_TOPIC],
-                query_type=row[QUERY_TYPE],
-                query_text=query,
-                golden_answer=row[ANSWER_COL],
+                case=case,
                 llm_response=answer,
                 rag_chunks=chunks,
             )

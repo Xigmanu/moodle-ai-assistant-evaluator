@@ -10,7 +10,14 @@ from .client import (
     RateLimiter,
     RequestBodyBuilderCallback,
 )
-from .data import EvaluationMetadata, EvaluationStatus, ExperimentConfig, ModelConfig, Workspace
+from .data import (
+    EvaluationMetadata,
+    EvaluationStatus,
+    ExperimentConfig,
+    ModelConfig,
+    TestCase,
+    Workspace,
+)
 from .data.export import export_eval_results, merge_experiment_results
 from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
 from .pipeline import collect_llm_responses, rag_req_body_builder
@@ -23,7 +30,7 @@ class EvaluationRunner:
         self,
         ws: Workspace,
         sys_prompt: str,
-        test_cases: list[dict],
+        test_cases: list[TestCase],
     ):
         self._ws = ws
         self._sys_prompt = sys_prompt
