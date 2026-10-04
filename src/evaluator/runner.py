@@ -155,7 +155,7 @@ class EvaluationRunner:
             eval_metadata.status = EvaluationStatus.OK
             return 0
 
-        except EvaluationCancelled:
+        except (KeyboardInterrupt, EvaluationCancelled):
             logger.info("Evaluation was cancelled")
             eval_metadata.status = EvaluationStatus.ABORTED
             return 130
