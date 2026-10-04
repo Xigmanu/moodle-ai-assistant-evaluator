@@ -173,7 +173,12 @@ class RateLimitedLLMClient:
             verify=self._verify_tls,
         )
 
-        logger.debug("HTTP %s: Captured LLM answer", res.status_code)
+        logger.debug(
+            "HTTP POST [%d] '%s' %d",
+            res.status_code,
+            self._conf.model.base_url,
+            res.elapsed / datetime.timedelta(milliseconds=1),
+        )
         self._write_exchange_dump(
             body=body,
             res=res,
@@ -183,6 +188,7 @@ class RateLimitedLLMClient:
             eval_metadata=eval_metadata,
         )
         if res.status_code in self._RETRYABLE_STATUS_CODES:
+            logger.debug("Request to the model API failed but returned a recoverable status code")
             return None
 
         res.raise_for_status()

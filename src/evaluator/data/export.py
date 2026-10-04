@@ -162,6 +162,7 @@ def _as_number(value: object) -> float | None:
 
     return None
 
+
 def _clean_header(header: tuple) -> list[str]:
     seen: set[str] = set()
     clean = []

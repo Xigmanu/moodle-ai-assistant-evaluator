@@ -108,7 +108,7 @@ def collect_llm_responses(
     for position, case in enumerate(test_cases, start=1):
         case_id = case.id
         query = case.query
-        logger.info("[%s/%s] Fetching LLM answer for case [%s] ...", position, total, case_id)
+        logger.info("Experiment '%s', case '%s': Querying LLM answer", exp_id, case_id)
 
         raw = client.retrying_call(
             prompt=query,
@@ -122,7 +122,9 @@ def collect_llm_responses(
         content = _extract_message_content(raw, case_id)
         answer, chunks = _parse_verbose_payload(content, case_id)
 
-        logger.info("Case [%s]: RAG returned [%s] chunks", case_id, len(chunks))
+        logger.debug(
+            "Experiment '%s', case '%s': RAG returned %d chunks", exp_id, case_id, len(chunks)
+        )
 
         exchanges.append(
             LLMExchange(
@@ -132,5 +134,5 @@ def collect_llm_responses(
             )
         )
 
-    logger.info("Collected %s response(s).", len(exchanges))
+    logger.info("Collected %s response(s)", len(exchanges))
     return exchanges

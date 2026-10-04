@@ -78,7 +78,7 @@ class EvaluationRunner:
     def _run_experiment(
         self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
     ) -> None:
-        logger.debug("Experiment configuration\n%s", exp.pretty_print())
+        logger.info("Experiment configuration\n%s", exp.pretty_print())
 
         global_config = self._ws.global_config
         gen_client = self._new_client(
@@ -132,8 +132,14 @@ class EvaluationRunner:
 
     def run_evaluation(self, eval_metadata: EvaluationMetadata) -> int:
         eval_metadata.start_ts = datetime.now()
+        logger.debug(
+            "Evaluation '%s': Started at (%s)", eval_metadata.id, str(eval_metadata.start_ts)
+        )
+
         try:
             experiments = self._load_experiments(eval_metadata)
+            logger.debug("Loaded '%d' experiments", len(experiments))
+
             evaluator = self._create_evaluator()
 
             for exp in experiments:

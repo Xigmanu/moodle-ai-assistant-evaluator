@@ -80,6 +80,7 @@ class EvaluationMetadata(BaseModel):
         try:
             res_body = json.loads(dump.res_body)
         except (json.JSONDecodeError, ValueError):
+            logger.debug("Unable to load response json for a dump")
             res_body = dump.res_body
 
         exchange = {
@@ -90,6 +91,14 @@ class EvaluationMetadata(BaseModel):
 
         with path.open("w", encoding="utf-8") as f:
             json.dump(exchange, f, indent=4, ensure_ascii=False)
+
+        logger.debug(
+            "Experiment '%s', case '%s': Wrote exchange dump [%d] %d bytes",
+            dump.exp_id,
+            dump.case_id,
+            dump.res_code,
+            os.path.getsize(path),
+        )
 
 
 class Workspace:

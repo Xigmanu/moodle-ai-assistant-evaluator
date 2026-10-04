@@ -14,6 +14,8 @@ QUERY_TYPE = "Fragetyp"
 QUERY_TOPIC = "Thema"
 ANSWER_COL = "Goldstandard-Antwort"
 
+REQUIRED_COLS = (ID_COL, VL_COL, QUERY_COL, QUERY_TYPE, QUERY_TOPIC, ANSWER_COL)
+
 _MAX_ITERABLE_EMPTY_ROWS = 10
 
 
@@ -31,11 +33,9 @@ class TestCase:
         return f"ID={self.id} | VL={self.vl}"
 
 
-REQUIRED_COLS = (ID_COL, VL_COL, QUERY_COL, QUERY_TYPE, QUERY_TOPIC, ANSWER_COL)
-
-
 def load_test_cases(path: Path) -> list[TestCase]:
     wb = load_workbook(path, read_only=True, data_only=True)
+    logger.debug("Loaded workbook at '%s'", str(path))
 
     try:
         ws = wb.active
@@ -99,7 +99,7 @@ def load_test_cases(path: Path) -> list[TestCase]:
     finally:
         wb.close()
 
-    logger.info("Loaded '%d' test case(s)", len(test_cases))
+    logger.info("Parsed '%d' test case(s)", len(test_cases))
     return test_cases
 
 

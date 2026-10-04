@@ -120,6 +120,7 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
 
     prompt_path = Path(args.prompt).resolve()
     prompt = prompt_path.read_text(encoding="utf-8").strip()
+    logger.debug("Resolved global system prompt for this evaluation suite")
 
     input_path = Path(args.input).resolve()
 
@@ -129,7 +130,6 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     )
 
     test_cases = load_test_cases(input_path)
-
     runner = EvaluationRunner(ws=ws, sys_prompt=prompt, test_cases=test_cases)
 
     return runner.run_evaluation(eval_metadata=eval_metadata)
