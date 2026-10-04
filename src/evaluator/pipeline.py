@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class LLMResponse:
+class LLMExchange:
     id: str
     vl: str
     topic: str
@@ -115,10 +115,10 @@ def collect_llm_responses(
     sys_prompt: str | None,
     exp_id: str,
     eval_metadata: EvaluationMetadata,
-) -> list[LLMResponse]:
+) -> list[LLMExchange]:
     total = len(test_cases)
 
-    responses: list[LLMResponse] = []
+    exchanges: list[LLMExchange] = []
     for position, row in enumerate(test_cases, start=1):
         case_id = row[ID_COL]
         query = row[QUERY_COL]
@@ -138,8 +138,8 @@ def collect_llm_responses(
 
         logger.info("Case [%s]: RAG returned [%s] chunks", case_id, len(chunks))
 
-        responses.append(
-            LLMResponse(
+        exchanges.append(
+            LLMExchange(
                 id=case_id,
                 vl=row[VL_COL],
                 topic=row[QUERY_TOPIC],
@@ -151,5 +151,5 @@ def collect_llm_responses(
             )
         )
 
-    logger.info("Collected %s response(s).", len(responses))
-    return responses
+    logger.info("Collected %s response(s).", len(exchanges))
+    return exchanges

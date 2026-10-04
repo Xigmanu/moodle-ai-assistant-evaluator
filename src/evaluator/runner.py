@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 
 from pydantic import SecretStr
 
@@ -10,8 +11,9 @@ from .client import (
     RateLimiter,
     RequestBodyBuilderCallback,
 )
-from .eval import eval_req_body_builder, run_evaluation
+from .eval import EvaluationCancelled, Evaluator
 from .export import export_eval_results, merge_experiment_results
+from .judge import eval_req_body_builder
 from .pipeline import collect_llm_responses, rag_req_body_builder
 from .workspace import EvaluationMetadata, EvaluationStatus, ExperimentConfig, Workspace
 
@@ -46,85 +48,111 @@ class EvaluationRunner:
             limiter=limiter, conf=client_conf, api_key=api_key, body_builder=req_body_builder
         )
 
-    def _run_experiment(self, eval_metadata: EvaluationMetadata, exp: ExperimentConfig) -> None:
-        logger.info("Running experiment: [%s]", exp)
+    def _create_evaluator(self) -> Evaluator:
+        global_config = self._ws.global_config
 
-        config = self._ws.global_config
-
-        gen_client = self._new_client(
-            model=config.gen_model,
-            api_key=self._ws.environment.gen_model_api_key,
-            req_body_builder=rag_req_body_builder(exp_conf=exp),
-        )
         judge_client = self._new_client(
-            model=config.eval_model,
+            model=global_config.eval_model,
             api_key=self._ws.environment.eval_model_api_key,
             req_body_builder=eval_req_body_builder(),
         )
 
-        logger.debug("Built gen and judge clients")
+        return Evaluator(
+            judge_client=judge_client,
+            threshold=global_config.test_threshold,
+            max_workers=global_config.max_concurrent_test_case_evaluations,
+        )
 
-        responses = collect_llm_responses(
+    def _get_system_prompt(self, experiment: ExperimentConfig) -> str:
+        return (
+            self._sys_prompt
+            if experiment.sys_prompt_override is None
+            else experiment.sys_prompt_override
+        )
+
+    def _run_experiment(
+        self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
+    ) -> None:
+        logger.debug("Experiment configuration\n%s", exp.pretty_print())
+
+        global_config = self._ws.global_config
+        gen_client = self._new_client(
+            model=global_config.gen_model,
+            api_key=self._ws.environment.gen_model_api_key,
+            req_body_builder=rag_req_body_builder(exp_conf=exp),
+        )
+
+        logger.info("Experiment '%s': Starting", exp.id)
+        exchanges = collect_llm_responses(
             client=gen_client,
             test_cases=self._test_cases,
-            sys_prompt=(
-                self._sys_prompt if exp.sys_prompt_override is None else exp.sys_prompt_override
-            ),
+            sys_prompt=self._get_system_prompt(exp),
             exp_id=exp.id,
             eval_metadata=eval_metadata,
         )
 
-        eval_results = run_evaluation(
-            threshold=config.test_threshold,
-            judge_client=judge_client,
-            responses=responses,
-            max_workers=config.max_concurrent_test_case_evaluations,
+        eval_results = evaluator.evaluate(
+            exchanges=exchanges,
+            exp_id=exp.id,
             eval_metadata=eval_metadata,
-            exp_id=exp.id,
         )
 
-        output_path = eval_metadata.root_path / "experiments" / exp.id / f"{exp.id}_results.xlsx"
-        export_eval_results(
-            exp_id=exp.id,
-            results=eval_results,
-            output_path=output_path,
+        out_path = self._experiment_output_path(eval_metadata=eval_metadata, exp_id=exp.id)
+        export_eval_results(exp_id=exp.id, results=eval_results, output_path=out_path)
+
+        logger.info(
+            "Experiment '%s': Results written to '%s'",
+            exp.id,
+            out_path,
         )
 
-        logger.info("Experiment ['%s']: Evaluation results written to '%s'", exp.id, output_path)
+    @staticmethod
+    def _experiment_output_path(
+        eval_metadata: EvaluationMetadata,
+        exp_id: str,
+    ) -> Path:
+        return eval_metadata.root_path / "experiments" / exp_id / f"{exp_id}_results.xlsx"
+
+    def _load_experiments(self, eval_metadata: EvaluationMetadata) -> list[ExperimentConfig]:
+        ws_experiments = self._ws.get_experiments()
+
+        experiments: list[ExperimentConfig] = []
+        for exp_id in eval_metadata.experiments:
+            exp = ws_experiments.get(exp_id)
+
+            if exp is not None:
+                experiments.append(exp)
+
+        return experiments
 
     def run_evaluation(self, eval_metadata: EvaluationMetadata) -> int:
-        logger.info("### Starting a VOLT AI tutor evaluation ###")
-        logger.info("Global configuration: %s", self._ws.global_config)
-
+        eval_metadata.start_ts = datetime.now()
         try:
-            logger.info("Running [%s] experiments", len(eval_metadata.experiments))
-            eval_metadata.start_ts = datetime.now()
+            experiments = self._load_experiments(eval_metadata)
+            evaluator = self._create_evaluator()
 
-            ws_experiments = self._ws.get_experiments()
-            for exp_id in eval_metadata.experiments:
-                exp = ws_experiments.get(exp_id)
-                if exp is not None:
-                    self._run_experiment(eval_metadata=eval_metadata, exp=exp)
+            for exp in experiments:
+                self._run_experiment(evaluator=evaluator, eval_metadata=eval_metadata, exp=exp)
 
             merge_experiment_results(
-                eval_metadata=eval_metadata,
-                tgt=eval_metadata.root_path / "evaluation_results.xlsx",
+                eval_metadata=eval_metadata, tgt=eval_metadata.root_path / "evaluation_results.xlsx"
             )
-            eval_metadata.status = EvaluationStatus.OK
 
-        except KeyboardInterrupt:
+            eval_metadata.status = EvaluationStatus.OK
+            return 0
+
+        except EvaluationCancelled:
+            logger.info("Evaluation was cancelled")
             eval_metadata.status = EvaluationStatus.ABORTED
             return 130
-        except Exception as e:
-            logger.critical("Evaluation aborted due to an unrecoverable error (%s)", e)
+
+        except Exception:
+            logger.exception("Evaluation aborted due to an unrecoverable error")
             eval_metadata.status = EvaluationStatus.ERROR
             return 2
+
         finally:
             eval_metadata.end_ts = datetime.now()
             eval_metadata.finalize()
-            logger.info(
-                "VOLT AI tutor evaluation is finished with a status [%s]",
-                str(eval_metadata.status).upper(),
-            )
 
-        return 0
+            logger.info("Evaluation suite finished with status [%s]", str(eval_metadata.status))
