@@ -27,7 +27,9 @@ def _resolve_os_default_ws_dir() -> Path:
     return (Path.home() / ".volteval").resolve()
 
 
-def _configure_eval_logger(eval_dir_path: Path, is_stream: bool) -> None:
+def _configure_eval_logger(eval_dir_path: Path | None, is_stream: bool) -> None:
+    assert eval_dir_path is not None, "root directory is None"
+
     handlers: list[logging.Handler] = [logging.FileHandler(eval_dir_path / "eval.log", mode="w")]
     if is_stream:
         console = logging.StreamHandler()
@@ -133,7 +135,7 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     return runner.run_evaluation(eval_metadata=eval_metadata)
 
 
-def _fmt_duration(start: datetime, end: datetime) -> str:
+def _fmt_duration(start: datetime | None, end: datetime | None) -> str:
     if start is None or end is None:
         return "N/A"
     total = int((end - start).total_seconds())
@@ -177,13 +179,18 @@ def _cmd_results_list(args: argparse.Namespace, ws: Workspace) -> int:
         )
     )
 
+    return 0
+
 
 def _cmd_results_get(args: argparse.Namespace, ws: Workspace) -> int:
+    if args.output is None:
+        raise ValueError("Output path was not provided")
+
     ws.resolve_read()
     metadata = ws.get_evaluation_metadata()
 
     usr_id = args.id
-    usr_out = Path(args.output).resolve() if args.output is not None else meta
+    usr_out = Path(args.output).resolve()
 
     for meta in metadata:
         if meta.id == usr_id:
@@ -210,9 +217,12 @@ def _cmd_results_clear(args: argparse.Namespace, ws: Workspace) -> int:
         else [m.root_path for m in metadata]
     )
     for path in filtered_paths:
+        assert path is not None, "filtered_paths is None"
         if path.exists() and path.is_dir():
             shutil.rmtree(path)
             print(f"Removed record ['{path}']")
+
+    return 0
 
 
 def _cmd_experiments_list(args: argparse.Namespace, ws: Workspace) -> int:
@@ -240,6 +250,7 @@ def _cmd_experiments_list(args: argparse.Namespace, ws: Workspace) -> int:
         rows.append(row)
 
     print(tabulate(rows, headers=headers, tablefmt="presto"))
+    return 0
 
 
 def main() -> int:

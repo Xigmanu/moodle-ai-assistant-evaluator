@@ -12,7 +12,7 @@ from deepeval.metrics import (
     GEval,
     HallucinationMetric,
 )
-from deepeval.test_case import LLMTestCase, SingleTurnParams
+from deepeval.test_case import LLMTestCase, RetrievedContextData, SingleTurnParams
 
 from .client import (
     RateLimitedLLMClient,
@@ -121,16 +121,17 @@ class Evaluator:
 
     @staticmethod
     def _metric_name(metric: BaseMetric) -> str:
-        return getattr(metric, "__name__", type(metric).__name__)
+        return getattr(metric, "__name__", type(BaseMetric).__name__)
 
     @staticmethod
     def _build_test_case(exch: LLMExchange) -> LLMTestCase:
+        retrieval_context: list[str | RetrievedContextData] = list(exch.rag_chunks)
         return LLMTestCase(
             input=exch.query_text,
             actual_output=exch.llm_response,
             expected_output=exch.golden_answer,
             name=exch.test_case_name,
-            retrieval_context=exch.rag_chunks,
+            retrieval_context=retrieval_context,
             context=exch.rag_chunks,
         )
 
@@ -212,7 +213,7 @@ class Evaluator:
             threshold=self._threshold,
             success=False,
             reason=getattr(metric, "reason", "") or "",
-            error=str(last_error),
+            error=str(last_err),
         )
 
     def _build_metrics(self, model: DeepEvalJudgeModel) -> list[BaseMetric]:

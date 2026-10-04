@@ -77,7 +77,7 @@ def _add_column_chart(
     chart.legend.position = "t"
     chart.legend.overlay = False
 
-    chart.width = _table_width(sheet=sheet, min_col=min_col, max_col=max_col)
+    chart.width = int(_table_width(sheet=sheet, min_col=min_col, max_col=max_col))
     chart.height = round(chart.width / 2.0)
 
     sheet.add_chart(chart=chart, anchor=f"{get_column_letter(min_col)}{max_row + 2}")
@@ -223,8 +223,8 @@ def _merge_files(input_paths: list[Path], output_path: str, metrics: list[str]) 
     merged.remove(merged.active)
     overview = merged.create_sheet(title="Overview", index=0)
 
-    used_names: set(str) = {"Overview"}
-    used_table_names: set(str) = set()
+    used_names: set[str] = {"Overview"}
+    used_table_names: set[str] = set()
     overview_rows: list[tuple[str, dict[str, list[float]]]] = []
 
     for path in input_paths:
@@ -273,12 +273,14 @@ def _get_file_paths_r(dir: Path) -> list[Path]:
 
 
 def merge_experiment_results(eval_metadata: EvaluationMetadata, tgt: Path) -> None:
+    assert eval_metadata.root_path is not None
+
     input_paths = _get_file_paths_r(eval_metadata.root_path / "experiments")
     if not input_paths:
         logger.warning("No experiment results were found. Aborting merge")
         return
 
-    _merge_files(input_paths=input_paths, output_path=tgt, metrics=eval_metadata.metrics)
+    _merge_files(input_paths=input_paths, output_path=str(tgt), metrics=eval_metadata.metrics)
 
 
 def export_eval_results(exp_id: str, results: list[EvaluationResult], output_path: Path) -> None:
@@ -304,7 +306,7 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
             _ACTUAL_OUTPUT_COL: resp.llm_response,
         }
         for metric in result.metrics:
-            record[metric.name] = metric.score
+            record[metric.name] = str(metric.score)
         records.append(record)
 
     df = pd.DataFrame(records, columns=list(_FIXED_COLS) + metric_cols)

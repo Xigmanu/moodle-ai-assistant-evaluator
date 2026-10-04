@@ -2,7 +2,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .catalogue import (
     ANSWER_COL,
@@ -33,7 +33,7 @@ class LLMExchange:
     query_text: str
     golden_answer: str
     llm_response: str
-    rag_chunks: list[str] = Field(default_factory=list)
+    rag_chunks: list[str]
 
     @property
     def test_case_name(self) -> str:

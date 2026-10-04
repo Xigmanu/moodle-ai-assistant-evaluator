@@ -102,10 +102,12 @@ class Workspace:
 
     @property
     def environment(self) -> Environment:
+        assert self._env is not None
         return self._env
 
     @property
     def global_config(self) -> GlobalConfig:
+        assert self._global_conf is not None
         return self._global_conf
 
     def get_evaluation_metadata(self) -> tuple[EvaluationMetadata, ...]:
@@ -177,7 +179,7 @@ class Workspace:
 
     def _select_experiments(self, exp_override: list[str]) -> list[str]:
         if not exp_override:
-            return self._experiments
+            return list(self._experiments.keys())
 
         selected: list[str] = []
         for exp_usr in exp_override:

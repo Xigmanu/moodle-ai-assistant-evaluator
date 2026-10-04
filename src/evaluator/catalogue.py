@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import pandas as pd
 
@@ -18,7 +19,7 @@ REQUIRED_COLS = (ID_COL, VL_COL, QUERY_COL, QUERY_TYPE, QUERY_TOPIC, ANSWER_COL)
 _DTYPES = {col: str for col in REQUIRED_COLS}
 
 
-def load_test_cases(path: str) -> list[dict]:
+def load_test_cases(path: Path) -> list[dict]:
     df = pd.read_excel(path, dtype=_DTYPES)
 
     missing = [col for col in REQUIRED_COLS if col not in df.columns]
