@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 from statistics import mean, stdev
 
-import pandas as pd
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font
@@ -151,10 +150,17 @@ def _unique_sheet_name(base: str, used_names: set[str]) -> str:
 def _as_number(value: object) -> float | None:
     if value is None or isinstance(value, bool):
         return None
+
     if isinstance(value, (int, float)):
         return float(value)
-    return None
 
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
+    return None
 
 def _clean_header(header: tuple) -> list[str]:
     seen: set[str] = set()
@@ -173,7 +179,7 @@ def _mean(values: list[float]) -> float | None:
 
 
 def _stdev(values: list[float]) -> float | None:
-    return stdev(values) if values else None
+    return stdev(values) if values and len(values) > 1 else None
 
 
 def _write_overview(
@@ -292,32 +298,44 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
             if metric.name not in metric_cols:
                 metric_cols.append(metric.name)
 
-    records = []
-    for result in results:
-        exch = result.exchange
-        record = {
-            ID_COL: exch.case.id,
-            VL_COL: exch.case.vl,
-            QUERY_TYPE: exch.case.query_type,
-            QUERY_TOPIC: exch.case.query_topic,
-            QUERY_COL: exch.case.query,
-            ANSWER_COL: exch.case.exp_answer,
+    columns = list(_FIXED_COLS) + metric_cols
+
+    def _sort_key(res: EvaluationResult) -> tuple[int, object]:
+        case_id = res.exchange.case.id
+        try:
+            return (0, int(case_id))
+        except (TypeError, ValueError):
+            return (1, case_id)
+
+    sorted_res = sorted(results, key=_sort_key)
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = exp_id
+
+    for col_idx, col_name in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=col_name)
+        cell.font = Font(bold=True)
+
+    for row_idx, res in enumerate(sorted_res, start=2):
+        exch = res.exchange
+        case = exch.case
+
+        values = {
+            ID_COL: case.id,
+            VL_COL: case.vl,
+            QUERY_TYPE: case.query_type,
+            QUERY_TOPIC: case.query_topic,
+            QUERY_COL: case.query,
+            ANSWER_COL: case.exp_answer,
             _ACTUAL_OUTPUT_COL: exch.llm_response,
         }
-        for metric in result.metrics:
-            record[metric.name] = str(metric.score)
-        records.append(record)
 
-    df = pd.DataFrame(records, columns=list(_FIXED_COLS) + metric_cols)
+        for metric in res.metrics:
+            values[metric.name] = str(metric.score)
 
-    sort_keys = pd.to_numeric(df[ID_COL], errors="coerce")
-    if sort_keys.notna().all():
-        df = df.assign(_sort=sort_keys).sort_values("_sort").drop(columns="_sort")
-    else:
-        df = df.sort_values(ID_COL)
+        for col_idx, col_name in enumerate(columns, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=values.get(col_name))
 
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name=exp_id, index=False)
-        ws = writer.sheets[exp_id]
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
+    wb.save(output_path)

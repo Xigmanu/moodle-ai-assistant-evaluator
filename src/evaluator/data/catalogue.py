@@ -14,6 +14,8 @@ QUERY_TYPE = "Fragetyp"
 QUERY_TOPIC = "Thema"
 ANSWER_COL = "Goldstandard-Antwort"
 
+_MAX_ITERABLE_EMPTY_ROWS = 10
+
 
 @dataclass(frozen=True)
 class TestCase:
@@ -58,8 +60,20 @@ def load_test_cases(path: Path) -> list[TestCase]:
 
         column_indices = {column: headers.index(column) for column in REQUIRED_COLS}
 
+        empty_row_cnt = 0
         test_cases: list[TestCase] = []
-        for i, row in rows:
+        for row_idx, row in enumerate(rows):
+            if not any(value is not None for value in row):
+                if empty_row_cnt < _MAX_ITERABLE_EMPTY_ROWS:
+                    logger.debug(
+                        "Consecutivelly iterated over '%d' empty rows. Aborting iteration",
+                        _MAX_ITERABLE_EMPTY_ROWS,
+                    )
+                    break
+                empty_row_cnt += 1
+                continue
+            empty_row_cnt = 0
+
             query = row[column_indices[QUERY_COL]]
             answer = row[column_indices[ANSWER_COL]]
 
@@ -67,7 +81,7 @@ def load_test_cases(path: Path) -> list[TestCase]:
                 logger.warning(
                     "Either query or golden answer is missing in catalogue '%s' at row '%d'",
                     path,
-                    i,
+                    row_idx,
                 )
                 continue
 
