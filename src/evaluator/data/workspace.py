@@ -57,9 +57,7 @@ class EvaluationMetadata(BaseModel):
         experiments_path = self.root_path / "experiments"
         experiments_path.mkdir()
         for exp_id in self.experiments:
-            dumps_path = experiments_path / exp_id / "dumps"
-            (dumps_path / "pipeline").mkdir(parents=True)
-            (dumps_path / "judge").mkdir()
+            (experiments_path / exp_id).mkdir(parents=True)
 
     def finalize(self) -> None:
         with open(self.root_path / "meta.json", "w", encoding="utf-8") as f:
@@ -71,7 +69,7 @@ class EvaluationMetadata(BaseModel):
         group_dir = (
             self.root_path / "experiments" / dump.exp_id / "dumps" / dump.group / dump.case_id
         )
-        group_dir.mkdir(exist_ok=True)
+        group_dir.mkdir(exist_ok=True, parents=True)
 
         prefix = "ok" if dump.is_ok else "err"
         idx = sum(1 for _ in group_dir.glob(f"{prefix}_exchange_*.json")) + 1
@@ -93,11 +91,12 @@ class EvaluationMetadata(BaseModel):
             json.dump(exchange, f, indent=4, ensure_ascii=False)
 
         logger.debug(
-            "Experiment '%s', case '%s': Wrote exchange dump [%d] %d bytes",
+            "Experiment '%s', case '%s': Wrote exchange dump [%d] %d bytes to '%s'",
             dump.exp_id,
             dump.case_id,
             dump.res_code,
             os.path.getsize(path),
+            path,
         )
 
 

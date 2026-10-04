@@ -19,11 +19,12 @@ from .data.workspace import ApiExchangeDump
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class LLMClientConfig:
     model: ModelConfig
     on_server_error_behavior: RetryBehavior
     on_socket_error_behavior: RetryBehavior
+    is_verbose: bool
 
 
 RequestBodyBuilderCallback = Callable[[ModelConfig, str, str | None, type[BaseModel] | None], dict]
@@ -179,14 +180,15 @@ class RateLimitedLLMClient:
             self._conf.model.base_url,
             res.elapsed / datetime.timedelta(milliseconds=1),
         )
-        self._write_exchange_dump(
-            body=body,
-            res=res,
-            exp_id=exp_id,
-            case_id=case_id,
-            group=group,
-            eval_metadata=eval_metadata,
-        )
+        if self._conf.is_verbose:
+            self._write_exchange_dump(
+                body=body,
+                res=res,
+                exp_id=exp_id,
+                case_id=case_id,
+                group=group,
+                eval_metadata=eval_metadata,
+            )
         if res.status_code in self._RETRYABLE_STATUS_CODES:
             logger.debug("Request to the model API failed but returned a recoverable status code")
             return None

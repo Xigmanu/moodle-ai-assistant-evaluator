@@ -31,10 +31,12 @@ class EvaluationRunner:
         ws: Workspace,
         sys_prompt: str,
         test_cases: list[TestCase],
+        is_verbose: bool,
     ):
         self._ws = ws
         self._sys_prompt = sys_prompt
         self._test_cases = test_cases
+        self._is_verbose = is_verbose
 
     def _new_client(
         self,
@@ -46,6 +48,7 @@ class EvaluationRunner:
             model=model,
             on_server_error_behavior=self._ws.global_config.on_server_error_behavior,
             on_socket_error_behavior=self._ws.global_config.on_socket_error_behavior,
+            is_verbose=self._is_verbose,
         )
         limiter = RateLimiter(model.rpm)
 
@@ -78,7 +81,7 @@ class EvaluationRunner:
     def _run_experiment(
         self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
     ) -> None:
-        logger.info("Experiment configuration\n%s", exp.pretty_print())
+        logger.info("Experiment configuration:\n%s", exp.pretty_print())
 
         global_config = self._ws.global_config
         gen_client = self._new_client(

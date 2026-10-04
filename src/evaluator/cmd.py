@@ -74,7 +74,13 @@ def _init_arg_parser() -> argparse.ArgumentParser:
         "--stream",
         dest="is_stream",
         action="store_true",
-        help="If set streams the logs to the console",
+        help="If set, streams the logs to the console",
+    )
+    run_cmd.add_argument(
+        "--verbose",
+        dest="is_verbose",
+        action="store_true",
+        help="If set, writes LLM API exchange dumps into evaluation output directory",
     )
     run_cmd.set_defaults(handler=_cmd_run)
 
@@ -130,7 +136,9 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     )
 
     test_cases = load_test_cases(input_path)
-    runner = EvaluationRunner(ws=ws, sys_prompt=prompt, test_cases=test_cases)
+    runner = EvaluationRunner(
+        ws=ws, sys_prompt=prompt, test_cases=test_cases, is_verbose=args.is_verbose
+    )
 
     return runner.run_evaluation(eval_metadata=eval_metadata)
 
