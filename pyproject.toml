@@ -25,7 +25,8 @@ dependencies = [
 dev = [
     "autoflake", 
     "black", 
-    "isort"
+    "isort",
+    "zuban"
 ]
 
 [project.scripts]
