@@ -57,9 +57,7 @@ class EvaluationMetadata(BaseModel):
         experiments_path = self.root_path / "experiments"
         experiments_path.mkdir()
         for exp_id in self.experiments:
-            dumps_path = experiments_path / exp_id / "dumps"
-            (dumps_path / "pipeline").mkdir(parents=True)
-            (dumps_path / "judge").mkdir()
+            (experiments_path / exp_id).mkdir(parents=True)
 
     def finalize(self) -> None:
         with open(self.root_path / "meta.json", "w", encoding="utf-8") as f:
@@ -71,7 +69,7 @@ class EvaluationMetadata(BaseModel):
         group_dir = (
             self.root_path / "experiments" / dump.exp_id / "dumps" / dump.group / dump.case_id
         )
-        group_dir.mkdir(exist_ok=True)
+        group_dir.mkdir(exist_ok=True, parents=True)
 
         prefix = "ok" if dump.is_ok else "err"
         idx = sum(1 for _ in group_dir.glob(f"{prefix}_exchange_*.json")) + 1
@@ -80,6 +78,7 @@ class EvaluationMetadata(BaseModel):
         try:
             res_body = json.loads(dump.res_body)
         except (json.JSONDecodeError, ValueError):
+            logger.debug("Unable to load response json for a dump")
             res_body = dump.res_body
 
         exchange = {
@@ -90,6 +89,15 @@ class EvaluationMetadata(BaseModel):
 
         with path.open("w", encoding="utf-8") as f:
             json.dump(exchange, f, indent=4, ensure_ascii=False)
+
+        logger.debug(
+            "Experiment '%s', case '%s': Wrote exchange dump [%d] %d bytes to '%s'",
+            dump.exp_id,
+            dump.case_id,
+            dump.res_code,
+            os.path.getsize(path),
+            path,
+        )
 
 
 class Workspace:
@@ -102,10 +110,12 @@ class Workspace:
 
     @property
     def environment(self) -> Environment:
+        assert self._env is not None
         return self._env
 
     @property
     def global_config(self) -> GlobalConfig:
+        assert self._global_conf is not None
         return self._global_conf
 
     def get_evaluation_metadata(self) -> tuple[EvaluationMetadata, ...]:
@@ -177,7 +187,7 @@ class Workspace:
 
     def _select_experiments(self, exp_override: list[str]) -> list[str]:
         if not exp_override:
-            return self._experiments
+            return list(self._experiments.keys())
 
         selected: list[str] = []
         for exp_usr in exp_override:

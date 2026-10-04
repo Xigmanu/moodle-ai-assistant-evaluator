@@ -5,14 +5,12 @@ from typing import Any, TypeVar
 from deepeval.models import DeepEvalBaseLLM
 from pydantic import BaseModel, ValidationError
 
-from .client import (
+from ..client import (
     RateLimitedLLMClient,
     RequestBodyBuilderCallback,
     openai_req_body_builder,
 )
-from .config import ModelConfig
-from .logging_util import log_err_with_raise
-from .workspace import EvaluationMetadata
+from ..data import EvaluationMetadata, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +55,7 @@ class DeepEvalJudgeModel(DeepEvalBaseLLM):
         try:
             content = resp["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
-            log_err_with_raise(
-                logger,
-                "LLM response does not match expected OpenAI API response schema",
-            )
+            raise ValueError("LLM response does not match expected OpenAI API response schema")
 
         if not content:
             logger.warning("Judge model returned an empty response.")
@@ -87,10 +82,10 @@ class DeepEvalJudgeModel(DeepEvalBaseLLM):
         try:
             return schema.model_validate_json(content)
         except ValidationError:
-            log_err_with_raise(
-                logger,
-                f"Judge model returned JSON that does not match {schema.__name__}",
-            )
+            logger.error("Judge model returned JSON that does not match %s", schema.__name__)
+            raise
+
+        raise AssertionError("unreachable")
 
     def generate(self, prompt: str, schema: type[SchemaT] | None = None) -> str | SchemaT:
         return self._call(prompt, schema)

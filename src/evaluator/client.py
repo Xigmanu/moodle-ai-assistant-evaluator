@@ -1,6 +1,8 @@
 import datetime
 import json
 import logging
+import platform
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,19 +13,18 @@ import requests
 import urllib3
 from pydantic import BaseModel, SecretStr
 
-from .config import ModelConfig, RetryBehavior
-from .logging_util import log_err_with_raise
-from .socket_util import ping_host
-from .workspace import ApiExchangeDump, EvaluationMetadata
+from .data import EvaluationMetadata, ModelConfig, RetryBehavior
+from .data.workspace import ApiExchangeDump
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class LLMClientConfig:
     model: ModelConfig
     on_server_error_behavior: RetryBehavior
     on_socket_error_behavior: RetryBehavior
+    is_verbose: bool
 
 
 RequestBodyBuilderCallback = Callable[[ModelConfig, str, str | None, type[BaseModel] | None], dict]
@@ -70,9 +71,8 @@ def openai_req_body_builder(
 class RateLimiter:
     def __init__(self, rpm: int):
         if rpm <= 0:
-            log_err_with_raise(
-                logger,
-                "Requests per minute must be greater than zero",
+            raise ValueError(
+                "Failed to initialize rate limiter. Requests per minute must be greater than zero"
             )
         self._interval = 60.0 / rpm
         self._lock = Lock()
@@ -89,6 +89,7 @@ class RateLimiter:
 
 
 class RateLimitedLLMClient:
+    _PING_HOST = "google.com"
     _REQ_TIMEOUT = (30, 3000)
     _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
@@ -173,21 +174,61 @@ class RateLimitedLLMClient:
             verify=self._verify_tls,
         )
 
-        logger.debug("HTTP %s: Captured LLM answer", res.status_code)
-        self._write_exchange_dump(
-            body=body,
-            res=res,
-            exp_id=exp_id,
-            case_id=case_id,
-            group=group,
-            eval_metadata=eval_metadata,
+        logger.debug(
+            "HTTP POST [%d] '%s' %d",
+            res.status_code,
+            self._conf.model.base_url,
+            res.elapsed / datetime.timedelta(milliseconds=1),
         )
+        if self._conf.is_verbose:
+            self._write_exchange_dump(
+                body=body,
+                res=res,
+                exp_id=exp_id,
+                case_id=case_id,
+                group=group,
+                eval_metadata=eval_metadata,
+            )
         if res.status_code in self._RETRYABLE_STATUS_CODES:
+            logger.debug("Request to the model API failed but returned a recoverable status code")
             return None
 
         res.raise_for_status()
 
         return res.json()
+
+    def _check_ping(self) -> bool:
+        count_flag = "-n" if platform.system().lower() == "windows" else "-c"
+        try:
+            subprocess.run(
+                ["ping", count_flag, "1", self._PING_HOST],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, OSError):
+            return False
+
+        return True
+
+    def _ping_host(self) -> bool:
+        logger.debug("Pinging connection ...")
+        socket_behavior = self._conf.on_socket_error_behavior
+
+        total_attempts = socket_behavior.max_retries + 1
+
+        for attempt in range(1, total_attempts + 1):
+            if self._check_ping():
+                logger.debug("Ping successful")
+                return True
+
+            logger.debug("Attempt [%d/%d]. Ping failed.", attempt, total_attempts)
+
+            if attempt < total_attempts:
+                logger.debug("Retrying in %d ...", socket_behavior.retry_interval)
+                time.sleep(socket_behavior.retry_interval)
+
+        return False
 
     def retrying_call(
         self,
@@ -217,11 +258,7 @@ class RateLimitedLLMClient:
 
                 logger.warning("Network error: %s", e)
 
-                if not ping_host(
-                    "google.com",
-                    max_retries=socket_behavior.max_retries,
-                    retry_interval=socket_behavior.retry_interval,
-                ):
+                if not self._ping_host():
                     logger.error("Failed to restore connection to network")
                     raise
 
@@ -242,7 +279,7 @@ class RateLimitedLLMClient:
                 return res
 
             if server_attempt >= server_behavior.max_retries:
-                log_err_with_raise(logger, "Exceeded maximum LLM API request attempts")
+                raise ValueError("Exceeded maximum LLM API request attempts")
 
             server_attempt += 1
 

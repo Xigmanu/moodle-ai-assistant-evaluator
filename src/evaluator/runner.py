@@ -4,18 +4,23 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from . import config
 from .client import (
     LLMClientConfig,
     RateLimitedLLMClient,
     RateLimiter,
     RequestBodyBuilderCallback,
 )
-from .eval import EvaluationCancelled, Evaluator
-from .export import export_eval_results, merge_experiment_results
-from .judge import eval_req_body_builder
+from .data import (
+    EvaluationMetadata,
+    EvaluationStatus,
+    ExperimentConfig,
+    ModelConfig,
+    TestCase,
+    Workspace,
+)
+from .data.export import export_eval_results, merge_experiment_results
+from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
 from .pipeline import collect_llm_responses, rag_req_body_builder
-from .workspace import EvaluationMetadata, EvaluationStatus, ExperimentConfig, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +30,17 @@ class EvaluationRunner:
         self,
         ws: Workspace,
         sys_prompt: str,
-        test_cases: list[dict],
+        test_cases: list[TestCase],
+        is_verbose: bool,
     ):
         self._ws = ws
         self._sys_prompt = sys_prompt
         self._test_cases = test_cases
+        self._is_verbose = is_verbose
 
     def _new_client(
         self,
-        model: config.ModelConfig,
+        model: ModelConfig,
         api_key: SecretStr,
         req_body_builder: RequestBodyBuilderCallback,
     ) -> RateLimitedLLMClient:
@@ -41,6 +48,7 @@ class EvaluationRunner:
             model=model,
             on_server_error_behavior=self._ws.global_config.on_server_error_behavior,
             on_socket_error_behavior=self._ws.global_config.on_socket_error_behavior,
+            is_verbose=self._is_verbose,
         )
         limiter = RateLimiter(model.rpm)
 
@@ -73,7 +81,7 @@ class EvaluationRunner:
     def _run_experiment(
         self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
     ) -> None:
-        logger.debug("Experiment configuration\n%s", exp.pretty_print())
+        logger.info("Experiment configuration:\n%s", exp.pretty_print())
 
         global_config = self._ws.global_config
         gen_client = self._new_client(
@@ -127,8 +135,14 @@ class EvaluationRunner:
 
     def run_evaluation(self, eval_metadata: EvaluationMetadata) -> int:
         eval_metadata.start_ts = datetime.now()
+        logger.debug(
+            "Evaluation '%s': Started at (%s)", eval_metadata.id, str(eval_metadata.start_ts)
+        )
+
         try:
             experiments = self._load_experiments(eval_metadata)
+            logger.debug("Loaded '%d' experiments", len(experiments))
+
             evaluator = self._create_evaluator()
 
             for exp in experiments:
@@ -141,7 +155,7 @@ class EvaluationRunner:
             eval_metadata.status = EvaluationStatus.OK
             return 0
 
-        except EvaluationCancelled:
+        except (KeyboardInterrupt, EvaluationCancelled):
             logger.info("Evaluation was cancelled")
             eval_metadata.status = EvaluationStatus.ABORTED
             return 130

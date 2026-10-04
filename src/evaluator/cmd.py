@@ -8,10 +8,10 @@ from pathlib import Path
 
 from tabulate import tabulate
 
-from .catalogue import load_test_cases
-from .export import merge_experiment_results
+from .data import EvaluationStatus, Workspace
+from .data.catalogue import load_test_cases
+from .data.export import merge_experiment_results
 from .runner import EvaluationRunner
-from .workspace import EvaluationStatus, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,9 @@ def _resolve_os_default_ws_dir() -> Path:
     return (Path.home() / ".volteval").resolve()
 
 
-def _configure_eval_logger(eval_dir_path: Path, is_stream: bool) -> None:
+def _configure_eval_logger(eval_dir_path: Path | None, is_stream: bool) -> None:
+    assert eval_dir_path is not None, "root directory is None"
+
     handlers: list[logging.Handler] = [logging.FileHandler(eval_dir_path / "eval.log", mode="w")]
     if is_stream:
         console = logging.StreamHandler()
@@ -72,7 +74,13 @@ def _init_arg_parser() -> argparse.ArgumentParser:
         "--stream",
         dest="is_stream",
         action="store_true",
-        help="If set streams the logs to the console",
+        help="If set, streams the logs to the console",
+    )
+    run_cmd.add_argument(
+        "--verbose",
+        dest="is_verbose",
+        action="store_true",
+        help="If set, writes LLM API exchange dumps into evaluation output directory",
     )
     run_cmd.set_defaults(handler=_cmd_run)
 
@@ -118,6 +126,7 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
 
     prompt_path = Path(args.prompt).resolve()
     prompt = prompt_path.read_text(encoding="utf-8").strip()
+    logger.debug("Resolved global system prompt for this evaluation suite")
 
     input_path = Path(args.input).resolve()
 
@@ -127,13 +136,14 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     )
 
     test_cases = load_test_cases(input_path)
-
-    runner = EvaluationRunner(ws=ws, sys_prompt=prompt, test_cases=test_cases)
+    runner = EvaluationRunner(
+        ws=ws, sys_prompt=prompt, test_cases=test_cases, is_verbose=args.is_verbose
+    )
 
     return runner.run_evaluation(eval_metadata=eval_metadata)
 
 
-def _fmt_duration(start: datetime, end: datetime) -> str:
+def _fmt_duration(start: datetime | None, end: datetime | None) -> str:
     if start is None or end is None:
         return "N/A"
     total = int((end - start).total_seconds())
@@ -177,13 +187,18 @@ def _cmd_results_list(args: argparse.Namespace, ws: Workspace) -> int:
         )
     )
 
+    return 0
+
 
 def _cmd_results_get(args: argparse.Namespace, ws: Workspace) -> int:
+    if args.output is None:
+        raise ValueError("Output path was not provided")
+
     ws.resolve_read()
     metadata = ws.get_evaluation_metadata()
 
     usr_id = args.id
-    usr_out = Path(args.output).resolve() if args.output is not None else meta
+    usr_out = Path(args.output).resolve()
 
     for meta in metadata:
         if meta.id == usr_id:
@@ -210,9 +225,12 @@ def _cmd_results_clear(args: argparse.Namespace, ws: Workspace) -> int:
         else [m.root_path for m in metadata]
     )
     for path in filtered_paths:
+        assert path is not None, "filtered_paths is None"
         if path.exists() and path.is_dir():
             shutil.rmtree(path)
             print(f"Removed record ['{path}']")
+
+    return 0
 
 
 def _cmd_experiments_list(args: argparse.Namespace, ws: Workspace) -> int:
@@ -240,6 +258,7 @@ def _cmd_experiments_list(args: argparse.Namespace, ws: Workspace) -> int:
         rows.append(row)
 
     print(tabulate(rows, headers=headers, tablefmt="presto"))
+    return 0
 
 
 def main() -> int:

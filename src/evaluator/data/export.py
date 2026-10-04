@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 from statistics import mean, stdev
 
-import pandas as pd
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font
@@ -11,8 +10,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 
+from ..eval import EvaluationResult
 from .catalogue import ANSWER_COL, ID_COL, QUERY_COL, QUERY_TOPIC, QUERY_TYPE, VL_COL
-from .eval import EvaluationResult
 from .workspace import EvaluationMetadata
 
 logger = logging.getLogger(__name__)
@@ -77,7 +76,7 @@ def _add_column_chart(
     chart.legend.position = "t"
     chart.legend.overlay = False
 
-    chart.width = _table_width(sheet=sheet, min_col=min_col, max_col=max_col)
+    chart.width = int(_table_width(sheet=sheet, min_col=min_col, max_col=max_col))
     chart.height = round(chart.width / 2.0)
 
     sheet.add_chart(chart=chart, anchor=f"{get_column_letter(min_col)}{max_row + 2}")
@@ -151,8 +150,16 @@ def _unique_sheet_name(base: str, used_names: set[str]) -> str:
 def _as_number(value: object) -> float | None:
     if value is None or isinstance(value, bool):
         return None
+
     if isinstance(value, (int, float)):
         return float(value)
+
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
     return None
 
 
@@ -173,7 +180,7 @@ def _mean(values: list[float]) -> float | None:
 
 
 def _stdev(values: list[float]) -> float | None:
-    return stdev(values) if values else None
+    return stdev(values) if values and len(values) > 1 else None
 
 
 def _write_overview(
@@ -223,8 +230,8 @@ def _merge_files(input_paths: list[Path], output_path: str, metrics: list[str]) 
     merged.remove(merged.active)
     overview = merged.create_sheet(title="Overview", index=0)
 
-    used_names: set(str) = {"Overview"}
-    used_table_names: set(str) = set()
+    used_names: set[str] = {"Overview"}
+    used_table_names: set[str] = set()
     overview_rows: list[tuple[str, dict[str, list[float]]]] = []
 
     for path in input_paths:
@@ -273,17 +280,18 @@ def _get_file_paths_r(dir: Path) -> list[Path]:
 
 
 def merge_experiment_results(eval_metadata: EvaluationMetadata, tgt: Path) -> None:
+    assert eval_metadata.root_path is not None
+
     input_paths = _get_file_paths_r(eval_metadata.root_path / "experiments")
     if not input_paths:
         logger.warning("No experiment results were found. Aborting merge")
         return
 
-    _merge_files(input_paths=input_paths, output_path=tgt, metrics=eval_metadata.metrics)
+    _merge_files(input_paths=input_paths, output_path=str(tgt), metrics=eval_metadata.metrics)
 
 
 def export_eval_results(exp_id: str, results: list[EvaluationResult], output_path: Path) -> None:
-    if not results:
-        log_err_with_raise(logger, "No evaluation results to export.")
+    assert results is not None, "no evaluation results to export"
 
     metric_cols: list[str] = []
     for result in results:
@@ -291,32 +299,44 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
             if metric.name not in metric_cols:
                 metric_cols.append(metric.name)
 
-    records = []
-    for result in results:
-        resp = result.exchange
-        record = {
-            ID_COL: resp.id,
-            VL_COL: resp.vl,
-            QUERY_TYPE: resp.query_type,
-            QUERY_TOPIC: resp.topic,
-            QUERY_COL: resp.query_text,
-            ANSWER_COL: resp.golden_answer,
-            _ACTUAL_OUTPUT_COL: resp.llm_response,
+    columns = list(_FIXED_COLS) + metric_cols
+
+    def _sort_key(res: EvaluationResult) -> tuple[int, object]:
+        case_id = res.exchange.case.id
+        try:
+            return (0, int(case_id))
+        except (TypeError, ValueError):
+            return (1, case_id)
+
+    sorted_res = sorted(results, key=_sort_key)
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = exp_id
+
+    for col_idx, col_name in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=col_name)
+        cell.font = Font(bold=True)
+
+    for row_idx, res in enumerate(sorted_res, start=2):
+        exch = res.exchange
+        case = exch.case
+
+        values = {
+            ID_COL: case.id,
+            VL_COL: case.vl,
+            QUERY_TYPE: case.query_type,
+            QUERY_TOPIC: case.query_topic,
+            QUERY_COL: case.query,
+            ANSWER_COL: case.exp_answer,
+            _ACTUAL_OUTPUT_COL: exch.llm_response,
         }
-        for metric in result.metrics:
-            record[metric.name] = metric.score
-        records.append(record)
 
-    df = pd.DataFrame(records, columns=list(_FIXED_COLS) + metric_cols)
+        for metric in res.metrics:
+            values[metric.name] = str(metric.score)
 
-    sort_keys = pd.to_numeric(df[ID_COL], errors="coerce")
-    if sort_keys.notna().all():
-        df = df.assign(_sort=sort_keys).sort_values("_sort").drop(columns="_sort")
-    else:
-        df = df.sort_values(ID_COL)
+        for col_idx, col_name in enumerate(columns, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=values.get(col_name))
 
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name=exp_id, index=False)
-        ws = writer.sheets[exp_id]
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
+    wb.save(output_path)

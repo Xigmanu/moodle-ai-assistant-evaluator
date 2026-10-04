@@ -116,6 +116,6 @@ def parse_experiment_config(config_path: Path) -> ExperimentConfig:
         man_name=yml_conf["man_name"],
         retrieval=yml_conf.get("retrieval", ""),
         is_cross_encoder_rerank=yml_conf["is_cross_encoder_rerank"],
-        collections=", ".join(collections) if collections else None,
+        collections=", ".join(collections) if collections else "",
         sys_prompt_override=yml_conf.get("sys_prompt_override", None),
     )

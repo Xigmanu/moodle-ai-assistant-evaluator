@@ -12,14 +12,14 @@ from deepeval.metrics import (
     GEval,
     HallucinationMetric,
 )
-from deepeval.test_case import LLMTestCase, SingleTurnParams
+from deepeval.test_case import LLMTestCase, RetrievedContextData, SingleTurnParams
 
-from .client import (
+from ..client import (
     RateLimitedLLMClient,
 )
+from ..data import EvaluationMetadata
+from ..pipeline import LLMExchange
 from .judge import DeepEvalJudgeModel
-from .pipeline import LLMExchange
-from .workspace import EvaluationMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class Evaluator:
                         self._measure,
                         metric,
                         test_case,
-                        case_id=exch.id,
+                        case_id=exch.case.id,
                         exp_id=exp_id,
                         cancel_event=cancel_event,
                     )
@@ -121,16 +121,17 @@ class Evaluator:
 
     @staticmethod
     def _metric_name(metric: BaseMetric) -> str:
-        return getattr(metric, "__name__", type(metric).__name__)
+        return getattr(metric, "__name__", type(BaseMetric).__name__)
 
     @staticmethod
     def _build_test_case(exch: LLMExchange) -> LLMTestCase:
+        retrieval_context: list[str | RetrievedContextData] = list(exch.rag_chunks)
         return LLMTestCase(
-            input=exch.query_text,
+            input=exch.case.query,
             actual_output=exch.llm_response,
-            expected_output=exch.golden_answer,
-            name=exch.test_case_name,
-            retrieval_context=exch.rag_chunks,
+            expected_output=exch.case.exp_answer,
+            name=exch.case.test_case_name,
+            retrieval_context=retrieval_context,
             context=exch.rag_chunks,
         )
 
@@ -142,14 +143,14 @@ class Evaluator:
                 "Experiment '%s', case '%s': "
                 "RAG metrics may fail because no RAG chunks are available",
                 exp_id,
-                exch.id,
+                exch.case.id,
             )
 
         judge = DeepEvalJudgeModel(
             client=self._judge_client,
             eval_metadata=eval_metadata,
             exp_id=exp_id,
-            case_id=exch.id,
+            case_id=exch.case.id,
         )
 
         metrics = self._build_metrics(judge)
@@ -212,7 +213,7 @@ class Evaluator:
             threshold=self._threshold,
             success=False,
             reason=getattr(metric, "reason", "") or "",
-            error=str(last_error),
+            error=str(last_err),
         )
 
     def _build_metrics(self, model: DeepEvalJudgeModel) -> list[BaseMetric]:
