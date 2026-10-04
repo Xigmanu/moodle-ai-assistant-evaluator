@@ -185,3 +185,5 @@ assets/**
 
 !assets/Sample_*
 !assets/prompts/Sample_*
+
+.debug
