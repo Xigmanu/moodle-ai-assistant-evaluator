@@ -4,7 +4,13 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from .catalogue import (
+from .client import (
+    RateLimitedLLMClient,
+    RequestBodyBuilderCallback,
+    openai_req_body_builder,
+)
+from .data import EvaluationMetadata, ExperimentConfig, ModelConfig
+from .data.catalogue import (
     ANSWER_COL,
     ID_COL,
     QUERY_COL,
@@ -12,14 +18,6 @@ from .catalogue import (
     QUERY_TYPE,
     VL_COL,
 )
-from .client import (
-    RateLimitedLLMClient,
-    RequestBodyBuilderCallback,
-    openai_req_body_builder,
-)
-from .config import ExperimentConfig, ModelConfig
-from .logging_util import log_err_with_raise
-from .workspace import EvaluationMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -57,15 +55,18 @@ def rag_req_body_builder(exp_conf: ExperimentConfig) -> RequestBodyBuilderCallba
 
     return builder
 
+def _log_err_with_raise(logger: logging.Logger, msg: str) -> None:
+    logger.error(msg)
+    raise ValueError(msg)
 
 def _extract_message_content(resp: dict, case_id: str) -> str:
     try:
         content = resp["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
-        log_err_with_raise(logger, f"Case [{case_id}]: Unexpected completion payload.")
+        _log_err_with_raise(logger, f"Case [{case_id}]: Unexpected completion payload.")
 
     if not content:
-        log_err_with_raise(logger, f"Case [{case_id}]: Message content is empty.")
+        _log_err_with_raise(logger, f"Case [{case_id}]: Message content is empty.")
 
     return content
 
@@ -74,34 +75,34 @@ def _parse_verbose_payload(content: str, case_id: str) -> tuple[str, list[str]]:
     try:
         payload = json.loads(content)
     except json.JSONDecodeError:
-        log_err_with_raise(
+        _log_err_with_raise(
             logger,
             f"Case [{case_id}]: Message content is not a valid JSON.",
         )
 
     if not isinstance(payload, dict):
-        log_err_with_raise(
+        _log_err_with_raise(
             logger,
             f"Case [{case_id}]: Expected a JSON object, got {type(payload).__name__}.",
         )
 
     retrieval = payload.get("retrieval")
     if not isinstance(retrieval, dict):
-        log_err_with_raise(
+        _log_err_with_raise(
             logger,
             f"Case [{case_id}]: Missing or malformed 'retrieval' object.",
         )
 
     chunks = retrieval.get("final_chunks")
     if not isinstance(chunks, list):
-        log_err_with_raise(
+        _log_err_with_raise(
             logger,
             f"Case [{case_id}]: Missing or malformed 'final_chunks' array.",
         )
 
     answer = payload.get("final_answer")
     if answer is None:
-        log_err_with_raise(
+        _log_err_with_raise(
             logger,
             f"Case [{case_id}]: No 'final_answer' in the pipeline payload",
         )

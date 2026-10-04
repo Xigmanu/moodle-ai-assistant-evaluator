@@ -4,18 +4,16 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from . import config
 from .client import (
     LLMClientConfig,
     RateLimitedLLMClient,
     RateLimiter,
     RequestBodyBuilderCallback,
 )
-from .eval import EvaluationCancelled, Evaluator
-from .export import export_eval_results, merge_experiment_results
-from .judge import eval_req_body_builder
+from .data import EvaluationMetadata, EvaluationStatus, ExperimentConfig, ModelConfig, Workspace
+from .data.export import export_eval_results, merge_experiment_results
+from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
 from .pipeline import collect_llm_responses, rag_req_body_builder
-from .workspace import EvaluationMetadata, EvaluationStatus, ExperimentConfig, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ class EvaluationRunner:
 
     def _new_client(
         self,
-        model: config.ModelConfig,
+        model: ModelConfig,
         api_key: SecretStr,
         req_body_builder: RequestBodyBuilderCallback,
     ) -> RateLimitedLLMClient:

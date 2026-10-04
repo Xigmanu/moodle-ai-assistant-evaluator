@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .logging_util import log_err_with_raise
+from ..logging_util import log_err_with_raise
 
 logger = logging.getLogger(__name__)
 

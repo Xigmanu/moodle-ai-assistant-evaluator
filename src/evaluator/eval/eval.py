@@ -14,12 +14,12 @@ from deepeval.metrics import (
 )
 from deepeval.test_case import LLMTestCase, RetrievedContextData, SingleTurnParams
 
-from .client import (
+from ..client import (
     RateLimitedLLMClient,
 )
+from ..data import EvaluationMetadata
+from ..pipeline import LLMExchange
 from .judge import DeepEvalJudgeModel
-from .pipeline import LLMExchange
-from .workspace import EvaluationMetadata
 
 logger = logging.getLogger(__name__)
 

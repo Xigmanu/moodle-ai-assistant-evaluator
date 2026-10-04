@@ -8,10 +8,10 @@ from pathlib import Path
 
 from tabulate import tabulate
 
-from .catalogue import load_test_cases
-from .export import merge_experiment_results
+from .data import EvaluationStatus, Workspace
+from .data.catalogue import load_test_cases
+from .data.export import merge_experiment_results
 from .runner import EvaluationRunner
-from .workspace import EvaluationStatus, Workspace
 
 logger = logging.getLogger(__name__)
 

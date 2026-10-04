@@ -11,8 +11,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 
+from ..eval import EvaluationResult
 from .catalogue import ANSWER_COL, ID_COL, QUERY_COL, QUERY_TOPIC, QUERY_TYPE, VL_COL
-from .eval import EvaluationResult
 from .workspace import EvaluationMetadata
 
 logger = logging.getLogger(__name__)
