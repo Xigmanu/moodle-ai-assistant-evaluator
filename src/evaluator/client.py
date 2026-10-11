@@ -37,6 +37,9 @@ class RequestContext:
     case_id: str
     group: RequestGroup
 
+    def to_string(self) -> str:
+        return f"[e='{self.exp_id}', c='{self.case_id}', g='{self.group}']"
+
 
 class RateLimiter:
     def __init__(self, rpm: int):
@@ -137,10 +140,11 @@ class RateLimitedLLMClient:
         )
 
         logger.debug(
-            "HTTP POST [%d] '%s' %d",
+            "HTTP POST [%d] '%s' %d | %s",
             res.status_code,
             self._conf.model.base_url,
             res.elapsed / datetime.timedelta(milliseconds=1),
+            ctx.to_string()
         )
         if self._conf.is_verbose:
             self._write_exchange_dump(body=body, res=res, ctx=ctx)
