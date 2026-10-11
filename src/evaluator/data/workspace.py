@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum, auto
 from pathlib import Path
-from typing import Literal
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -16,11 +15,23 @@ from .config import ExperimentConfig, GlobalConfig, parse_experiment_config, par
 logger = logging.getLogger(__name__)
 
 
+class EvaluationStatus(StrEnum):
+    OK = auto()
+    ERROR = auto()
+    ABORTED = auto()
+    UNKNOWN = auto()
+
+
+class RequestGroup(StrEnum):
+    PIPELINE = auto()
+    JUDGE = auto()
+
+
 @dataclass
 class ApiExchangeDump:
     case_id: str
     exp_id: str
-    group: Literal["pipeline", "judge"]
+    group: RequestGroup
     is_ok: bool
     req_body: str
     res_code: int
@@ -32,13 +43,6 @@ class ApiExchangeDump:
 class Environment:
     gen_model_api_key: SecretStr
     eval_model_api_key: SecretStr
-
-
-class EvaluationStatus(StrEnum):
-    OK = auto()
-    ERROR = auto()
-    ABORTED = auto()
-    UNKNOWN = auto()
 
 
 class EvaluationMetadata(BaseModel):
