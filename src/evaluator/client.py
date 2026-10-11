@@ -23,6 +23,43 @@ DumpWriterCallback = Callable[[ApiExchangeDump], None]
 RequestBodyBuilderCallback = Callable[[ModelConfig, str, str | None, type[BaseModel] | None], dict]
 
 
+def openai_req_body_builder(
+    model_conf: ModelConfig,
+    prompt: str,
+    sys_prompt: str | None,
+    schema: type[BaseModel] | None,
+) -> dict:
+    messages: list[dict] = []
+    if sys_prompt:
+        messages.append({"role": "system", "content": sys_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    body: dict = {
+        "model": model_conf.name,
+        "messages": messages,
+    }
+    if schema is not None:
+        body["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema.__name__,
+                "schema": schema.model_json_schema(),
+                "strict": True,
+            },
+        }
+
+    hyperparams = {
+        "temperature": model_conf.temperature,
+        "top_p": model_conf.top_p,
+        "seed": model_conf.seed,
+        "max_tokens": model_conf.max_tokens,
+    }
+
+    body.update({key: value for key, value in hyperparams.items() if value is not None})
+
+    return body
+
+
 @dataclass(frozen=True)
 class LLMClientConfig:
     model: ModelConfig
@@ -144,7 +181,7 @@ class RateLimitedLLMClient:
             res.status_code,
             self._conf.model.base_url,
             res.elapsed / datetime.timedelta(milliseconds=1),
-            ctx.to_string()
+            ctx.to_string(),
         )
         if self._conf.is_verbose:
             self._write_exchange_dump(body=body, res=res, ctx=ctx)
@@ -244,40 +281,3 @@ class RateLimitedLLMClient:
                 server_behavior.retry_interval,
             )
             time.sleep(server_behavior.retry_interval)
-
-
-def openai_req_body_builder(
-    model_conf: ModelConfig,
-    prompt: str,
-    sys_prompt: str | None,
-    schema: type[BaseModel] | None,
-) -> dict:
-    messages: list[dict] = []
-    if sys_prompt:
-        messages.append({"role": "system", "content": sys_prompt})
-    messages.append({"role": "user", "content": prompt})
-
-    body: dict = {
-        "model": model_conf.name,
-        "messages": messages,
-    }
-    if schema is not None:
-        body["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema.__name__,
-                "schema": schema.model_json_schema(),
-                "strict": True,
-            },
-        }
-
-    hyperparams = {
-        "temperature": model_conf.temperature,
-        "top_p": model_conf.top_p,
-        "seed": model_conf.seed,
-        "max_tokens": model_conf.max_tokens,
-    }
-
-    body.update({key: value for key, value in hyperparams.items() if value is not None})
-
-    return body
