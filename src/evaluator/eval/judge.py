@@ -8,9 +8,10 @@ from pydantic import BaseModel, ValidationError
 from ..client import (
     RateLimitedLLMClient,
     RequestBodyBuilderCallback,
+    RequestContext,
     openai_req_body_builder,
 )
-from ..data import EvaluationMetadata, ModelConfig
+from ..data import EvaluationMetadata, ModelConfig, RequestGroup
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +69,9 @@ class DeepEvalJudgeModel(DeepEvalBaseLLM):
             prompt=prompt,
             sys_prompt=None,
             schema=schema,
-            exp_id=self._exp_id,
-            case_id=self._case_id,
-            group="judge",
-            eval_metadata=self._eval_metadata,
+            ctx=RequestContext(
+                exp_id=self._exp_id, case_id=self._case_id, group=RequestGroup.JUDGE
+            ),
         )
 
         content = self._extract_content(resp)

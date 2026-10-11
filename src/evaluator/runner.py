@@ -5,6 +5,7 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from .client import (
+    DumpWriterCallback,
     LLMClientConfig,
     RateLimitedLLMClient,
     RateLimiter,
@@ -42,6 +43,7 @@ class EvaluationRunner:
         self,
         model: ModelConfig,
         api_key: SecretStr,
+        dump_writer: DumpWriterCallback,
         req_body_builder: RequestBodyBuilderCallback,
     ) -> RateLimitedLLMClient:
         client_conf = LLMClientConfig(
@@ -53,15 +55,20 @@ class EvaluationRunner:
         limiter = RateLimiter(model.rpm)
 
         return RateLimitedLLMClient(
-            limiter=limiter, conf=client_conf, api_key=api_key, body_builder=req_body_builder
+            limiter=limiter,
+            conf=client_conf,
+            api_key=api_key,
+            dump_writer=dump_writer,
+            body_builder=req_body_builder,
         )
 
-    def _create_evaluator(self) -> Evaluator:
+    def _create_evaluator(self, dump_writer: DumpWriterCallback) -> Evaluator:
         global_config = self._ws.global_config
 
         judge_client = self._new_client(
             model=global_config.eval_model,
             api_key=self._ws.environment.eval_model_api_key,
+            dump_writer=dump_writer,
             req_body_builder=eval_req_body_builder(),
         )
 
@@ -87,6 +94,7 @@ class EvaluationRunner:
         gen_client = self._new_client(
             model=global_config.gen_model,
             api_key=self._ws.environment.gen_model_api_key,
+            dump_writer=eval_metadata.write_dump,
             req_body_builder=rag_req_body_builder(exp_conf=exp),
         )
 
@@ -143,7 +151,7 @@ class EvaluationRunner:
             experiments = self._load_experiments(eval_metadata)
             logger.debug("Loaded '%d' experiments", len(experiments))
 
-            evaluator = self._create_evaluator()
+            evaluator = self._create_evaluator(eval_metadata.write_dump)
 
             for exp in experiments:
                 self._run_experiment(evaluator=evaluator, eval_metadata=eval_metadata, exp=exp)

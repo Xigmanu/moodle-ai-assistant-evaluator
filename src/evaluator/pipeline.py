@@ -7,9 +7,10 @@ from pydantic import BaseModel
 from .client import (
     RateLimitedLLMClient,
     RequestBodyBuilderCallback,
+    RequestContext,
     openai_req_body_builder,
 )
-from .data import EvaluationMetadata, ExperimentConfig, ModelConfig, TestCase
+from .data import EvaluationMetadata, ExperimentConfig, ModelConfig, RequestGroup, TestCase
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +115,7 @@ def collect_llm_responses(
             prompt=query,
             sys_prompt=sys_prompt,
             schema=None,
-            exp_id=exp_id,
-            case_id=case_id,
-            group="pipeline",
-            eval_metadata=eval_metadata,
+            ctx=RequestContext(exp_id=exp_id, case_id=case_id, group=RequestGroup.PIPELINE),
         )
         content = _extract_message_content(raw, case_id)
         answer, chunks = _parse_verbose_payload(content, case_id)

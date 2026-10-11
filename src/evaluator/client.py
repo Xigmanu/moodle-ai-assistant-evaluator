@@ -7,16 +7,20 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock, local
-from typing import Any, Literal
+from typing import Any
 
 import requests
 import urllib3
 from pydantic import BaseModel, SecretStr
 
-from .data import EvaluationMetadata, ModelConfig, RetryBehavior
+from .data import ModelConfig, RequestGroup, RetryBehavior
 from .data.workspace import ApiExchangeDump
 
 logger = logging.getLogger(__name__)
+
+
+DumpWriterCallback = Callable[[ApiExchangeDump], None]
+RequestBodyBuilderCallback = Callable[[ModelConfig, str, str | None, type[BaseModel] | None], dict]
 
 
 @dataclass(frozen=True)
@@ -27,45 +31,11 @@ class LLMClientConfig:
     is_verbose: bool
 
 
-RequestBodyBuilderCallback = Callable[[ModelConfig, str, str | None, type[BaseModel] | None], dict]
-RequestGroup = Literal["pipeline", "judge"]
-
-
-def openai_req_body_builder(
-    model_conf: ModelConfig,
-    prompt: str,
-    sys_prompt: str | None,
-    schema: type[BaseModel] | None,
-) -> dict:
-    messages: list[dict] = []
-    if sys_prompt:
-        messages.append({"role": "system", "content": sys_prompt})
-    messages.append({"role": "user", "content": prompt})
-
-    body: dict = {
-        "model": model_conf.name,
-        "messages": messages,
-    }
-    if schema is not None:
-        body["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema.__name__,
-                "schema": schema.model_json_schema(),
-                "strict": True,
-            },
-        }
-
-    hyperparams = {
-        "temperature": model_conf.temperature,
-        "top_p": model_conf.top_p,
-        "seed": model_conf.seed,
-        "max_tokens": model_conf.max_tokens,
-    }
-
-    body.update({key: value for key, value in hyperparams.items() if value is not None})
-
-    return body
+@dataclass
+class RequestContext:
+    exp_id: str
+    case_id: str
+    group: RequestGroup
 
 
 class RateLimiter:
@@ -98,12 +68,14 @@ class RateLimitedLLMClient:
         limiter: RateLimiter,
         conf: LLMClientConfig,
         api_key: SecretStr,
+        dump_writer: DumpWriterCallback,
         body_builder: RequestBodyBuilderCallback = openai_req_body_builder,
         verify_tls: bool = False,
     ):
         self._limiter = limiter
         self._conf = conf
         self._api_key = api_key
+        self._write_dump = dump_writer
         self._body_builder = body_builder
         self._verify_tls = verify_tls
         self._local = local()
@@ -132,19 +104,13 @@ class RateLimitedLLMClient:
         }
 
     def _write_exchange_dump(
-        self,
-        body: dict[str, Any],
-        res: requests.Response,
-        exp_id: str,
-        case_id: str,
-        group: RequestGroup,
-        eval_metadata: EvaluationMetadata,
+        self, body: dict[str, Any], res: requests.Response, ctx: RequestContext
     ) -> None:
-        eval_metadata.write_dump(
+        self._write_dump(
             ApiExchangeDump(
-                case_id=case_id,
-                exp_id=exp_id,
-                group=group,
+                case_id=ctx.case_id,
+                exp_id=ctx.exp_id,
+                group=ctx.group,
                 is_ok=res.ok,
                 req_body=json.dumps(body),
                 res_code=res.status_code,
@@ -158,10 +124,7 @@ class RateLimitedLLMClient:
         prompt: str,
         sys_prompt: str | None,
         schema: type[BaseModel] | None,
-        exp_id: str,
-        case_id: str,
-        group: RequestGroup,
-        eval_metadata: EvaluationMetadata,
+        ctx: RequestContext,
     ) -> dict | None:
         self._limiter.acquire()
         body = self._body_builder(self._conf.model, prompt, sys_prompt, schema)
@@ -181,14 +144,7 @@ class RateLimitedLLMClient:
             res.elapsed / datetime.timedelta(milliseconds=1),
         )
         if self._conf.is_verbose:
-            self._write_exchange_dump(
-                body=body,
-                res=res,
-                exp_id=exp_id,
-                case_id=case_id,
-                group=group,
-                eval_metadata=eval_metadata,
-            )
+            self._write_exchange_dump(body=body, res=res, ctx=ctx)
         if res.status_code in self._RETRYABLE_STATUS_CODES:
             logger.debug("Request to the model API failed but returned a recoverable status code")
             return None
@@ -235,10 +191,7 @@ class RateLimitedLLMClient:
         prompt: str,
         sys_prompt: str | None,
         schema: type[BaseModel] | None,
-        exp_id: str,
-        case_id: str,
-        group: RequestGroup,
-        eval_metadata: EvaluationMetadata,
+        ctx: RequestContext,
     ) -> dict:
         server_behavior = self._conf.on_server_error_behavior
         socket_behavior = self._conf.on_socket_error_behavior
@@ -248,7 +201,7 @@ class RateLimitedLLMClient:
 
         while True:
             try:
-                res = self._post(prompt, sys_prompt, schema, exp_id, case_id, group, eval_metadata)
+                res = self._post(prompt, sys_prompt, schema, ctx)
             except (requests.ConnectionError, requests.Timeout) as e:
                 if socket_attempt >= socket_behavior.max_retries:
                     logger.error("Network request failed")
@@ -267,8 +220,8 @@ class RateLimitedLLMClient:
             except requests.HTTPError as e:
                 logger.error(
                     "LLM server returned HTTP %s: %s",
-                    e.response.status_code if e.response else "unknown",
-                    e.response.text[:1000] if e.response else "",
+                    e.response.status_code if e.response is not None else "unknown",
+                    e.response.text[:1000] if e.response is not None else "",
                 )
                 raise
             except Exception as e:
@@ -288,3 +241,40 @@ class RateLimitedLLMClient:
                 server_behavior.retry_interval,
             )
             time.sleep(server_behavior.retry_interval)
+
+
+def openai_req_body_builder(
+    model_conf: ModelConfig,
+    prompt: str,
+    sys_prompt: str | None,
+    schema: type[BaseModel] | None,
+) -> dict:
+    messages: list[dict] = []
+    if sys_prompt:
+        messages.append({"role": "system", "content": sys_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    body: dict = {
+        "model": model_conf.name,
+        "messages": messages,
+    }
+    if schema is not None:
+        body["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema.__name__,
+                "schema": schema.model_json_schema(),
+                "strict": True,
+            },
+        }
+
+    hyperparams = {
+        "temperature": model_conf.temperature,
+        "top_p": model_conf.top_p,
+        "seed": model_conf.seed,
+        "max_tokens": model_conf.max_tokens,
+    }
+
+    body.update({key: value for key, value in hyperparams.items() if value is not None})
+
+    return body
