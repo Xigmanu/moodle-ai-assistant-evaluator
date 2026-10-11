@@ -111,11 +111,10 @@ class EvaluationRunner:
         sys_prompt = self._extend_system_prompt(
             prompt=self._get_system_prompt(exp), test_cases=self._test_cases
         )
-        print(sys_prompt)
         exchanges = collect_llm_responses(
             client=gen_client,
             test_cases=self._test_cases,
-            sys_prompt=self._get_system_prompt(exp),
+            sys_prompt=sys_prompt,
             exp_id=exp.id,
             eval_metadata=eval_metadata,
         )
