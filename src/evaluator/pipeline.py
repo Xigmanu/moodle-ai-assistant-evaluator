@@ -10,7 +10,7 @@ from .client import (
     RequestContext,
     openai_req_body_builder,
 )
-from .data import EvaluationMetadata, ExperimentConfig, ModelConfig, RequestGroup, TestCase
+from .data import ExperimentConfig, ModelConfig, RequestGroup, TestCase
 
 logger = logging.getLogger(__name__)
 
@@ -40,97 +40,65 @@ def rag_req_body_builder(exp_conf: ExperimentConfig) -> RequestBodyBuilderCallba
     return builder
 
 
-def _log_err_with_raise(logger: logging.Logger, msg: str) -> None:
-    logger.error(msg)
-    raise ValueError(msg)
+class SingleTurnCollector:
+    def __init__(self, client: RateLimitedLLMClient):
+        self._client = client
 
+    @staticmethod
+    def _extract_message_content(resp: dict, case_id: str) -> str:
+        try:
+            content = resp["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            logger.error("Case [%s]: Unexpected completion payload format.", case_id)
 
-def _extract_message_content(resp: dict, case_id: str) -> str:
-    try:
-        content = resp["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        _log_err_with_raise(logger, f"Case [{case_id}]: Unexpected completion payload.")
+        if not content:
+            logger.warning("Case [%s]: Message content is empty.", case_id)
 
-    if not content:
-        _log_err_with_raise(logger, f"Case [{case_id}]: Message content is empty.")
+        return content
 
-    return content
-
-
-def _parse_verbose_payload(content: str, case_id: str) -> tuple[str, list[str]]:
-    try:
+    @staticmethod
+    def _parse_verbose_payload(content: str, case_id: str) -> tuple[str, list[str]]:
         payload = json.loads(content)
-    except json.JSONDecodeError:
-        _log_err_with_raise(
-            logger,
-            f"Case [{case_id}]: Message content is not a valid JSON.",
-        )
+        retrieval = payload.get("retrieval")
+        chunks = retrieval.get("final_chunks")
+        answer = payload.get("final_answer")
 
-    if not isinstance(payload, dict):
-        _log_err_with_raise(
-            logger,
-            f"Case [{case_id}]: Expected a JSON object, got {type(payload).__name__}.",
-        )
+        return str(answer).split("<br><!-- qdrant-pipeline", 1)[0], [str(chunk) for chunk in chunks]
 
-    retrieval = payload.get("retrieval")
-    if not isinstance(retrieval, dict):
-        _log_err_with_raise(
-            logger,
-            f"Case [{case_id}]: Missing or malformed 'retrieval' object.",
-        )
+    def collect(
+        self, sys_prompt: str | None, test_cases: list[TestCase], exp_id: str
+    ) -> list[LLMExchange]:
+        total = len(test_cases)
+        exchanges: list[LLMExchange] = []
+        for i, case in enumerate(test_cases, start=1):
+            case_id = case.id
+            query = case.query
 
-    chunks = retrieval.get("final_chunks")
-    if not isinstance(chunks, list):
-        _log_err_with_raise(
-            logger,
-            f"Case [{case_id}]: Missing or malformed 'final_chunks' array.",
-        )
-
-    answer = payload.get("final_answer")
-    if answer is None:
-        _log_err_with_raise(
-            logger,
-            f"Case [{case_id}]: No 'final_answer' in the pipeline payload",
-        )
-
-    return str(answer).split("<br><!-- qdrant-pipeline", 1)[0], [str(chunk) for chunk in chunks]
-
-
-def collect_llm_responses(
-    client: RateLimitedLLMClient,
-    test_cases: list[TestCase],
-    sys_prompt: str | None,
-    exp_id: str,
-    eval_metadata: EvaluationMetadata,
-) -> list[LLMExchange]:
-    total = len(test_cases)
-
-    exchanges: list[LLMExchange] = []
-    for position, case in enumerate(test_cases, start=1):
-        case_id = case.id
-        query = case.query
-        logger.info("Experiment '%s', case '%s': Querying LLM answer", exp_id, case_id)
-
-        raw = client.retrying_call(
-            prompt=query,
-            sys_prompt=sys_prompt,
-            schema=None,
-            ctx=RequestContext(exp_id=exp_id, case_id=case_id, group=RequestGroup.PIPELINE),
-        )
-        content = _extract_message_content(raw, case_id)
-        answer, chunks = _parse_verbose_payload(content, case_id)
-
-        logger.debug(
-            "Experiment '%s', case '%s': RAG returned %d chunks", exp_id, case_id, len(chunks)
-        )
-
-        exchanges.append(
-            LLMExchange(
-                case=case,
-                llm_response=answer,
-                rag_chunks=chunks,
+            ctx = RequestContext(exp_id=exp_id, case_id=case_id, group=RequestGroup.PIPELINE)
+            logger.debug("Querying an answer from LLM: %s", ctx.to_string())
+            raw = self._client.retrying_call(
+                prompt=query, sys_prompt=sys_prompt, schema=None, ctx=ctx
             )
-        )
+            content = self._extract_message_content(raw, case_id)
+            answer, chunks = self._parse_verbose_payload(content, case_id)
 
-    logger.info("Collected %s response(s)", len(exchanges))
-    return exchanges
+            logger.debug(
+                "Experiment '%s', case '%s': RAG returned %d chunks", exp_id, case_id, len(chunks)
+            )
+            exchanges.append(
+                LLMExchange(
+                    case=case,
+                    llm_response=answer,
+                    rag_chunks=chunks,
+                )
+            )
+
+            logger.info(
+                "Experiment '%s', case '%s': Collected an LLM response [%d/%d]",
+                exp_id,
+                case_id,
+                i,
+                total,
+            )
+
+        return exchanges

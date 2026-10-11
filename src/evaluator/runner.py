@@ -22,7 +22,7 @@ from .data import (
 )
 from .data.export import export_eval_results, merge_experiment_results
 from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
-from .pipeline import collect_llm_responses, rag_req_body_builder
+from .pipeline import SingleTurnCollector, rag_req_body_builder
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +111,9 @@ class EvaluationRunner:
         sys_prompt = self._extend_system_prompt(
             prompt=self._get_system_prompt(exp), test_cases=self._test_cases
         )
-        exchanges = collect_llm_responses(
-            client=gen_client,
-            test_cases=self._test_cases,
-            sys_prompt=sys_prompt,
-            exp_id=exp.id,
-            eval_metadata=eval_metadata,
+        collector = SingleTurnCollector(client=gen_client)
+        exchanges = collector.collect(
+            sys_prompt=sys_prompt, test_cases=self._test_cases, exp_id=exp.id
         )
 
         eval_results = evaluator.evaluate(
