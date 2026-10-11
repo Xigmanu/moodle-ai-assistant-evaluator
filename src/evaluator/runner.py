@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from random import sample
 
 from pydantic import SecretStr
 
@@ -85,6 +86,14 @@ class EvaluationRunner:
             else experiment.sys_prompt_override
         )
 
+    def _extend_system_prompt(self, prompt: str, test_cases: list[TestCase]) -> str:
+        examples = sample(test_cases, k=min(len(test_cases), 5))
+        shots = "\n\n".join(
+            f'Frage: "{tc.query}"\nAntwort: "{tc.exp_answer}"'
+            for _, tc in enumerate(examples, start=1)
+        )
+        return f"{prompt}\n\n# Beispiele für Fragen und Antworten\n\n{shots}"
+
     def _run_experiment(
         self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
     ) -> None:
@@ -99,6 +108,10 @@ class EvaluationRunner:
         )
 
         logger.info("Experiment '%s': Starting", exp.id)
+        sys_prompt = self._extend_system_prompt(
+            prompt=self._get_system_prompt(exp), test_cases=self._test_cases
+        )
+        print(sys_prompt)
         exchanges = collect_llm_responses(
             client=gen_client,
             test_cases=self._test_cases,
