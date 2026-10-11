@@ -59,7 +59,6 @@ class RateLimiter:
 
 
 class RateLimitedLLMClient:
-    _PING_HOST = "google.com"
     _REQ_TIMEOUT = (30, 3000)
     _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
@@ -157,7 +156,7 @@ class RateLimitedLLMClient:
         count_flag = "-n" if platform.system().lower() == "windows" else "-c"
         try:
             subprocess.run(
-                ["ping", count_flag, "1", self._PING_HOST],
+                ["ping", count_flag, "1", self._conf.model.base_url],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=True,
