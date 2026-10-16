@@ -18,7 +18,7 @@ from ..common.client import (
     RateLimitedLLMClient,
 )
 from ..data import EvaluationMetadata
-from ..pipeline import LLMExchange
+from ..pipeline import PipelineExchange
 from .judge import DeepEvalJudgeModel
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class MetricResult:
 @dataclass(frozen=True)
 class EvaluationResult:
     index: int
-    exchange: LLMExchange
+    exchange: PipelineExchange
     metrics: list[MetricResult]
 
 
@@ -64,7 +64,7 @@ class Evaluator:
         self._max_attempts = max_attempts
 
     def evaluate(
-        self, exchanges: list[LLMExchange], exp_id: str, eval_metadata: EvaluationMetadata
+        self, exchanges: list[PipelineExchange], exp_id: str, eval_metadata: EvaluationMetadata
     ) -> list[EvaluationResult]:
         logger.info("Experiment '%s': Starting evaluation", exp_id)
 
@@ -124,7 +124,7 @@ class Evaluator:
         return getattr(metric, "__name__", type(BaseMetric).__name__)
 
     @staticmethod
-    def _build_test_case(exch: LLMExchange) -> LLMTestCase:
+    def _build_test_case(exch: PipelineExchange) -> LLMTestCase:
         retrieval_context: list[str | RetrievedContextData] = list(exch.rag_chunks)
         return LLMTestCase(
             input=exch.case.query,
@@ -136,7 +136,7 @@ class Evaluator:
         )
 
     def _prepare_case(
-        self, exch: LLMExchange, exp_id: str, eval_metadata: EvaluationMetadata
+        self, exch: PipelineExchange, exp_id: str, eval_metadata: EvaluationMetadata
     ) -> list[BaseMetric]:
         if not exch.rag_chunks:
             logger.warning(

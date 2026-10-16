@@ -23,8 +23,9 @@ class EvaluationStatus(StrEnum):
 
 
 class RequestGroup(StrEnum):
-    PIPELINE = auto()
+    ALIGN = auto()
     JUDGE = auto()
+    PIPELINE = auto()
 
 
 @dataclass

@@ -4,25 +4,27 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from .common.client import (
+from ..common.client import (
     RateLimitedLLMClient,
     RequestBodyBuilderCallback,
     RequestContext,
     openai_req_body_builder,
 )
-from .data import ExperimentConfig, ModelConfig, RequestGroup, TestCase
+from ..data import ExperimentConfig, ModelConfig, RequestGroup, TestCase
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class LLMExchange:
+class PipelineExchange:
     case: TestCase
     llm_response: str
     rag_chunks: list[str]
 
 
-def rag_req_body_builder(exp_conf: ExperimentConfig) -> RequestBodyBuilderCallback:
+def rag_req_body_builder(
+    exp_conf: ExperimentConfig, verbose: bool = True
+) -> RequestBodyBuilderCallback:
     def builder(
         model_conf: ModelConfig,
         prompt: str,
@@ -34,7 +36,7 @@ def rag_req_body_builder(exp_conf: ExperimentConfig) -> RequestBodyBuilderCallba
         body["collections"] = exp_conf.collections
         body["retrieval"] = exp_conf.retrieval
         body["is_cross_encoder_rerank"] = exp_conf.is_cross_encoder_rerank
-        body["verbose"] = True
+        body["verbose"] = verbose
         return body
 
     return builder
@@ -66,42 +68,19 @@ class SingleTurnCollector:
         return str(answer).split("<br><!-- qdrant-pipeline", 1)[0], [str(chunk) for chunk in chunks]
 
     def collect(
-        self, sys_prompt: str | None, test_cases: list[TestCase], exp_id: str
-    ) -> list[LLMExchange]:
-        total = len(test_cases)
-        exchanges: list[LLMExchange] = []
-        for i, case in enumerate(test_cases, start=1):
-            case_id = case.id
-            query = case.query
+        self, sys_prompt: str | None, test_case: TestCase, exp_id: str
+    ) -> tuple[str, list[str]]:
+        case_id = test_case.id
+        query = test_case.query
 
-            ctx = RequestContext(exp_id=exp_id, case_id=case_id, group=RequestGroup.PIPELINE)
-            logger.debug("Querying an answer from LLM: %s", ctx.to_string())
-            raw = self._client.retrying_call(
-                prompt=query, sys_prompt=sys_prompt, schema=None, ctx=ctx
-            )
-            content = self._extract_message_content(raw, case_id)
-            answer, chunks = self._parse_verbose_payload(content, case_id)
+        ctx = RequestContext(exp_id=exp_id, case_id=case_id, group=RequestGroup.PIPELINE)
+        raw = self._client.retrying_call(prompt=query, sys_prompt=sys_prompt, schema=None, ctx=ctx)
+        content = self._extract_message_content(raw, case_id)
+        answer, chunks = self._parse_verbose_payload(content, case_id)
 
-            logger.debug(
-                "Experiment '%s', case '%s': Pipeline returned %d chunks",
-                exp_id,
-                case_id,
-                len(chunks),
-            )
-            exchanges.append(
-                LLMExchange(
-                    case=case,
-                    llm_response=answer,
-                    rag_chunks=chunks,
-                )
-            )
-
-            logger.info(
-                "Experiment '%s', case '%s': Collected a pipeline response [%d/%d]",
-                exp_id,
-                case_id,
-                i,
-                total,
-            )
-
-        return exchanges
+        logger.info(
+            "Case '%s': Processed pipeline response; rag_chunks=%d",
+            case_id,
+            len(chunks),
+        )
+        return (answer, chunks)

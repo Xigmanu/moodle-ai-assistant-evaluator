@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from random import sample
 
 from pydantic import SecretStr
+
+from evaluator.eval.preproc import GoldenAligner
 
 from .common.client import (
     DumpWriterCallback,
@@ -22,7 +23,8 @@ from .data import (
 )
 from .data.export import export_eval_results, merge_experiment_results
 from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
-from .pipeline import SingleTurnCollector, rag_req_body_builder
+from .pipeline import PipelineExchange, SingleTurnCollector
+from .pipeline.collect import rag_req_body_builder
 
 logger = logging.getLogger(__name__)
 
@@ -86,35 +88,40 @@ class EvaluationRunner:
             else experiment.sys_prompt_override
         )
 
-    def _extend_system_prompt(self, prompt: str, test_cases: list[TestCase]) -> str:
-        examples = sample(test_cases, k=min(len(test_cases), 5))
-        shots = "\n\n".join(
-            f'Frage: "{tc.query}"\nAntwort: "{tc.exp_answer}"'
-            for _, tc in enumerate(examples, start=1)
-        )
-        return f"{prompt}\n\n# Beispiele für Fragen und Antworten\n\n{shots}"
-
     def _run_experiment(
         self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
     ) -> None:
         logger.info("Experiment configuration:\n%s", exp.pretty_print())
 
         global_config = self._ws.global_config
-        gen_client = self._new_client(
-            model=global_config.gen_model,
-            api_key=self._ws.environment.gen_model_api_key,
-            dump_writer=eval_metadata.write_dump,
-            req_body_builder=rag_req_body_builder(exp_conf=exp),
-        )
 
         logger.info("Experiment '%s': Starting", exp.id)
-        sys_prompt = self._extend_system_prompt(
-            prompt=self._get_system_prompt(exp), test_cases=self._test_cases
+        collector = SingleTurnCollector(
+            client=self._new_client(
+                model=global_config.gen_model,
+                api_key=self._ws.environment.gen_model_api_key,
+                dump_writer=eval_metadata.write_dump,
+                req_body_builder=rag_req_body_builder(exp_conf=exp),
+            )
         )
-        collector = SingleTurnCollector(client=gen_client)
-        exchanges = collector.collect(
-            sys_prompt=sys_prompt, test_cases=self._test_cases, exp_id=exp.id
+        aligner = GoldenAligner(
+            client=self._new_client(
+                model=global_config.gen_model,
+                api_key=self._ws.environment.gen_model_api_key,
+                dump_writer=eval_metadata.write_dump,
+                req_body_builder=rag_req_body_builder(exp_conf=exp, verbose=False),
+            )
         )
+        exchanges: list[PipelineExchange] = []
+        sys_prompt = self._get_system_prompt(exp)
+        for i, test_case in enumerate(self._test_cases):
+            logger.info("Case '%s': Starting processing", test_case.id)
+            answer, chunks = collector.collect(
+                sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id
+            )
+            aligned = aligner.format(sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id)
+            exchanges.append(PipelineExchange(case=aligned, llm_response=answer, rag_chunks=chunks))
+            logger.info("Case '%s': Finished processing", test_case.id)
 
         eval_results = evaluator.evaluate(
             exchanges=exchanges,
