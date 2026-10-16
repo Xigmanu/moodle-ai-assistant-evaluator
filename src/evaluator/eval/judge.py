@@ -5,7 +5,7 @@ from typing import Any, TypeVar
 from deepeval.models import DeepEvalBaseLLM
 from pydantic import BaseModel, ValidationError
 
-from ..client import (
+from ..common.client import (
     RateLimitedLLMClient,
     RequestBodyBuilderCallback,
     RequestContext,

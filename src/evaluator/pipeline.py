@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from .client import (
+from .common.client import (
     RateLimitedLLMClient,
     RequestBodyBuilderCallback,
     RequestContext,
@@ -83,7 +83,10 @@ class SingleTurnCollector:
             answer, chunks = self._parse_verbose_payload(content, case_id)
 
             logger.debug(
-                "Experiment '%s', case '%s': RAG returned %d chunks", exp_id, case_id, len(chunks)
+                "Experiment '%s', case '%s': Pipeline returned %d chunks",
+                exp_id,
+                case_id,
+                len(chunks),
             )
             exchanges.append(
                 LLMExchange(
@@ -94,7 +97,7 @@ class SingleTurnCollector:
             )
 
             logger.info(
-                "Experiment '%s', case '%s': Collected an LLM response [%d/%d]",
+                "Experiment '%s', case '%s': Collected a pipeline response [%d/%d]",
                 exp_id,
                 case_id,
                 i,

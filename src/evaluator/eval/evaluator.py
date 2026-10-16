@@ -14,7 +14,7 @@ from deepeval.metrics import (
 )
 from deepeval.test_case import LLMTestCase, RetrievedContextData, SingleTurnParams
 
-from ..client import (
+from ..common.client import (
     RateLimitedLLMClient,
 )
 from ..data import EvaluationMetadata

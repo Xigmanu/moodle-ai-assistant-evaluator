@@ -13,8 +13,8 @@ import requests
 import urllib3
 from pydantic import BaseModel, SecretStr
 
-from .data import ModelConfig, RequestGroup, RetryBehavior
-from .data.workspace import ApiExchangeDump
+from ..data import ModelConfig, RequestGroup, RetryBehavior
+from ..data.workspace import ApiExchangeDump
 
 logger = logging.getLogger(__name__)
 

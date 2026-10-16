@@ -5,7 +5,7 @@ from random import sample
 
 from pydantic import SecretStr
 
-from .client import (
+from .common.client import (
     DumpWriterCallback,
     LLMClientConfig,
     RateLimitedLLMClient,
