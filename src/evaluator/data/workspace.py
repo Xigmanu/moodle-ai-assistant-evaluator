@@ -130,7 +130,8 @@ class Workspace:
 
     def new_eval_metadata(self, exp_override: list[str] | None = None) -> EvaluationMetadata:
         id = str(uuid4())
-        dir_path = self._root / "evaluations" / id
+        idx = len(next(os.walk(self._root / "evaluations"))[1]) + 1
+        dir_path = self._root / "evaluations" / f"{idx}_{id}"
         experiments = sorted(
             self._experiments.keys()
             if not exp_override
