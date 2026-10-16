@@ -55,7 +55,7 @@ class EvaluationMetadata(BaseModel):
     root_path: Path | None = Field(default=None, exclude=True)
 
     def init(self) -> None:
-        assert self.root_path, "Root directory path for an evaluation is not set"
+        assert self.root_path is not None, "Root directory path for an evaluation is not set"
 
         self.root_path.mkdir(parents=True)
         experiments_path = self.root_path / "experiments"
