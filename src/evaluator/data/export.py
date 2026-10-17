@@ -234,7 +234,8 @@ def _merge_files(input_paths: list[Path], output_path: str, metrics: list[str]) 
     used_table_names: set[str] = set()
     overview_rows: list[tuple[str, dict[str, list[float]]]] = []
 
-    for path in input_paths:
+    total = len(input_paths)
+    for i, path in enumerate(input_paths):
         src_wb = load_workbook(path, data_only=True)
         for sheet_name in src_wb.sheetnames:
             src_sheet = src_wb[sheet_name]
@@ -263,7 +264,7 @@ def _merge_files(input_paths: list[Path], output_path: str, metrics: list[str]) 
             _format_as_table(sheet=dst_sheet, used_table_names=used_table_names)
             overview_rows.append((new_sheet_name, values))
 
-        logger.info("Processed ['%s']", path.stem)
+        logger.info("[%d/%d] Processed '%s'", i + 1, total, path.stem)
         src_wb.close()
 
     _write_overview(
@@ -272,7 +273,7 @@ def _merge_files(input_paths: list[Path], output_path: str, metrics: list[str]) 
     logger.info("Created an overview sheet")
 
     merged.save(output_path)
-    logger.info("Saved merged workbook to ['%s']", output_path)
+    logger.info("Saved merged workbook to '%s'", output_path)
 
 
 def _get_file_paths_r(dir: Path) -> list[Path]:
@@ -281,17 +282,20 @@ def _get_file_paths_r(dir: Path) -> list[Path]:
 
 def merge_experiment_results(eval_metadata: EvaluationMetadata, tgt: Path) -> None:
     assert eval_metadata.root_path is not None
-
-    input_paths = _get_file_paths_r(eval_metadata.root_path / "experiments")
+    input_paths = _get_file_paths_r(eval_metadata.experiments_path)
     if not input_paths:
         logger.warning("No experiment results were found. Aborting merge")
         return
 
+    logger.info("Merging %d experiment results", len(input_paths))
     _merge_files(input_paths=input_paths, output_path=str(tgt), metrics=eval_metadata.metrics)
 
 
-def export_eval_results(exp_id: str, results: list[EvaluationResult], output_path: Path) -> None:
+def export_experiment_results(
+    exp_id: str, results: list[EvaluationResult], output_path: Path
+) -> None:
     assert results is not None, "no evaluation results to export"
+    logger.info("Experiment '%s': Exporting evaluation results", exp_id)
 
     metric_cols: list[str] = []
     for result in results:
@@ -319,6 +323,7 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
         cell = ws.cell(row=1, column=col_idx, value=col_name)
         cell.font = Font(bold=True)
 
+    total = len(sorted_res) - 2
     for row_idx, res in enumerate(sorted_res, start=2):
         exch = res.exchange
         case = exch.case
@@ -339,4 +344,7 @@ def export_eval_results(exp_id: str, results: list[EvaluationResult], output_pat
         for col_idx, col_name in enumerate(columns, start=1):
             ws.cell(row=row_idx, column=col_idx, value=values.get(col_name))
 
+        logger.debug("[%d/%d] Processed row for case '%s'", row_idx, total, case.id)
+
     wb.save(output_path)
+    logger.info("Experiment '%s': Results are written to '%s'", exp_id, output_path)

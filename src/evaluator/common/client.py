@@ -175,11 +175,10 @@ class RateLimitedLLMClient:
             timeout=self._REQ_TIMEOUT,
             verify=self._verify_tls,
         )
-
         logger.debug(
-            "HTTP POST [%d] '%s' %d | %s",
-            res.status_code,
+            "'POST %s HTTP/1.1' %d %d | %s",
             self._conf.model.base_url,
+            res.status_code,
             res.elapsed / datetime.timedelta(milliseconds=1),
             ctx.to_string(),
         )

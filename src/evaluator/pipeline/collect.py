@@ -51,10 +51,10 @@ class SingleTurnCollector:
         try:
             content = resp["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
-            logger.error("Case [%s]: Unexpected completion payload format.", case_id)
+            logger.error("Case '%s': Unexpected completion payload format.", case_id)
 
         if not content:
-            logger.warning("Case [%s]: Message content is empty.", case_id)
+            logger.warning("Case '%s': Message content is empty.", case_id)
 
         return content
 
@@ -78,7 +78,7 @@ class SingleTurnCollector:
         content = self._extract_message_content(raw, case_id)
         answer, chunks = self._parse_verbose_payload(content, case_id)
 
-        logger.info(
+        logger.debug(
             "Case '%s': Processed pipeline response; rag_chunks=%d",
             case_id,
             len(chunks),

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -21,7 +21,7 @@ from .data import (
     TestCase,
     Workspace,
 )
-from .data.export import export_eval_results, merge_experiment_results
+from .data.export import export_experiment_results, merge_experiment_results
 from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
 from .pipeline import PipelineExchange, SingleTurnCollector
 from .pipeline.collect import rag_req_body_builder
@@ -91,8 +91,8 @@ class EvaluationRunner:
     def _run_experiment(
         self, evaluator: Evaluator, eval_metadata: EvaluationMetadata, exp: ExperimentConfig
     ) -> None:
-        logger.info("Experiment configuration:\n%s", exp.pretty_print())
-
+        logger.info("Experiment configuration:\n%s", exp.as_pretty_str())
+        start_ts = datetime.now()
         global_config = self._ws.global_config
 
         logger.info("Experiment '%s': Starting", exp.id)
@@ -114,14 +114,15 @@ class EvaluationRunner:
         )
         exchanges: list[PipelineExchange] = []
         sys_prompt = self._get_system_prompt(exp)
+        total = len(self._test_cases)
+        logger.info("Processing loaded test cases")
         for i, test_case in enumerate(self._test_cases):
-            logger.info("Case '%s': Starting processing", test_case.id)
             answer, chunks = collector.collect(
                 sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id
             )
             aligned = aligner.format(sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id)
             exchanges.append(PipelineExchange(case=aligned, llm_response=answer, rag_chunks=chunks))
-            logger.info("Case '%s': Finished processing", test_case.id)
+            logger.info("[%d/%d] Processed test case '%s'", i + 1, total, test_case.id)
 
         eval_results = evaluator.evaluate(
             exchanges=exchanges,
@@ -130,11 +131,12 @@ class EvaluationRunner:
         )
 
         out_path = self._experiment_output_path(eval_metadata=eval_metadata, exp_id=exp.id)
-        export_eval_results(exp_id=exp.id, results=eval_results, output_path=out_path)
+        export_experiment_results(exp_id=exp.id, results=eval_results, output_path=out_path)
 
         logger.info(
-            "Experiment '%s': Results written to '%s'",
+            "Experiment '%s': Finished successfully; elapsed=%ss, output_path=%s",
             exp.id,
+            (datetime.now() - start_ts) / timedelta(milliseconds=1000),
             out_path,
         )
 
@@ -143,7 +145,7 @@ class EvaluationRunner:
         eval_metadata: EvaluationMetadata,
         exp_id: str,
     ) -> Path:
-        return eval_metadata.root_path / "experiments" / exp_id / f"{exp_id}_results.xlsx"
+        return eval_metadata.experiments_path / exp_id / f"{exp_id}_results.xlsx"
 
     def _load_experiments(self, eval_metadata: EvaluationMetadata) -> list[ExperimentConfig]:
         ws_experiments = self._ws.get_experiments()
@@ -159,33 +161,30 @@ class EvaluationRunner:
 
     def run_evaluation(self, eval_metadata: EvaluationMetadata) -> int:
         eval_metadata.start_ts = datetime.now()
-        logger.debug(
-            "Evaluation '%s': Started at (%s)", eval_metadata.id, str(eval_metadata.start_ts)
-        )
-
         try:
             experiments = self._load_experiments(eval_metadata)
-            logger.debug("Loaded '%d' experiments", len(experiments))
+            logger.info("Loaded experiments: %s", ", ".join(e.id for e in experiments))
 
             evaluator = self._create_evaluator(eval_metadata.write_dump)
-
             for exp in experiments:
                 self._run_experiment(evaluator=evaluator, eval_metadata=eval_metadata, exp=exp)
 
             merge_experiment_results(
-                eval_metadata=eval_metadata, tgt=eval_metadata.root_path / "evaluation_results.xlsx"
+                eval_metadata=eval_metadata, tgt=eval_metadata.root_path / "evaluation_results.xlsx"  # type: ignore[operator]
             )
 
             eval_metadata.status = EvaluationStatus.OK
             return 0
 
         except (KeyboardInterrupt, EvaluationCancelled):
-            logger.info("Evaluation was cancelled")
+            logger.info("Evaluation '%s': Aborted by user", eval_metadata.id)
             eval_metadata.status = EvaluationStatus.ABORTED
             return 130
 
         except Exception:
-            logger.exception("Evaluation aborted due to an unrecoverable error")
+            logger.exception(
+                "Evaluation '%s': Aborted due to an unrecoverable error", eval_metadata.id
+            )
             eval_metadata.status = EvaluationStatus.ERROR
             return 2
 
@@ -193,4 +192,8 @@ class EvaluationRunner:
             eval_metadata.end_ts = datetime.now()
             eval_metadata.finalize()
 
-            logger.info("Evaluation suite finished with status [%s]", str(eval_metadata.status))
+            logger.info(
+                "Evaluation '%s': Finished with status [%s]",
+                eval_metadata.id,
+                str(eval_metadata.status),
+            )

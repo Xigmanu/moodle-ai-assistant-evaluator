@@ -87,8 +87,8 @@ class DeepEvalJudgeModel(DeepEvalBaseLLM):
 
         raise AssertionError("unreachable")
 
-    def generate(self, prompt: str, schema: type[SchemaT] | None = None) -> str | SchemaT:
+    def generate(self, prompt: str, schema: type[SchemaT] | None = None) -> str | SchemaT:  # type: ignore[override]
         return self._call(prompt, schema)
 
-    async def a_generate(self, prompt: str, schema: type[SchemaT] | None = None) -> str | SchemaT:
+    async def a_generate(self, prompt: str, schema: type[SchemaT] | None = None) -> str | SchemaT:  # type: ignore[override]
         return await asyncio.to_thread(self._call, prompt, schema)

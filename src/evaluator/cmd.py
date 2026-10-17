@@ -38,7 +38,7 @@ def _configure_eval_logger(eval_dir_path: Path | None, is_stream: bool) -> None:
 
     logging.basicConfig(
         level=logging.DEBUG,
-        format="%(asctime)s  %(levelname)-8s---\t[%(thread)s]\t%(name)s:\t%(message)s",
+        format="%(asctime)-27s%(levelname)-8s[%(thread)s] [%(name)s]: %(message)s",
         handlers=handlers,
     )
 
@@ -123,18 +123,17 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     eval_metadata.init()
 
     _configure_eval_logger(eval_metadata.root_path, is_stream=args.is_stream)
+    logger.info(
+        "Starting an evaluation suite '%s' with the following configuration:\n%s",
+        eval_metadata.id,
+        ws.global_config.as_pretty_str(),
+    )
 
     prompt_path = Path(args.prompt).resolve()
     prompt = prompt_path.read_text(encoding="utf-8").strip()
     logger.debug("Resolved global system prompt for this evaluation suite")
 
     input_path = Path(args.input).resolve()
-
-    logger.info(
-        "Starting an evaluation suite with the following configuration:\n%s",
-        ws.global_config.pretty_print(),
-    )
-
     test_cases = load_test_cases(input_path)
     runner = EvaluationRunner(
         ws=ws, sys_prompt=prompt, test_cases=test_cases, is_verbose=args.is_verbose

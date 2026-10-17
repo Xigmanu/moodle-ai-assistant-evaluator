@@ -28,7 +28,7 @@ class RequestGroup(StrEnum):
     PIPELINE = auto()
 
 
-@dataclass
+@dataclass(frozen=True)
 class ApiExchangeDump:
     case_id: str
     exp_id: str
@@ -40,7 +40,7 @@ class ApiExchangeDump:
     res_body: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Environment:
     gen_model_api_key: SecretStr
     eval_model_api_key: SecretStr
@@ -55,25 +55,27 @@ class EvaluationMetadata(BaseModel):
     metrics: list[str] = Field(default_factory=list)
     root_path: Path | None = Field(default=None, exclude=True)
 
+    @property
+    def experiments_path(self) -> Path:
+        assert self.root_path is not None, "Root directory path for an evaluation is not set"
+        return self.root_path / "experiments"
+
     def init(self) -> None:
         assert self.root_path is not None, "Root directory path for an evaluation is not set"
-
         self.root_path.mkdir(parents=True)
-        experiments_path = self.root_path / "experiments"
-        experiments_path.mkdir()
+        self.experiments_path.mkdir()
         for exp_id in self.experiments:
-            (experiments_path / exp_id).mkdir(parents=True)
+            (self.experiments_path / exp_id).mkdir(parents=True)
 
     def finalize(self) -> None:
+        assert self.root_path is not None, "Root directory path for an evaluation is not set"
         with open(self.root_path / "meta.json", "w", encoding="utf-8") as f:
             f.write(self.model_dump_json(indent=4))
 
     def write_dump(self, dump: ApiExchangeDump) -> None:
         assert self.root_path, "Root directory path for an evaluation is not set"
 
-        group_dir = (
-            self.root_path / "experiments" / dump.exp_id / "dumps" / dump.group / dump.case_id
-        )
+        group_dir = self.experiments_path / dump.exp_id / "dumps" / dump.group / dump.case_id
         group_dir.mkdir(exist_ok=True, parents=True)
 
         prefix = "ok" if dump.is_ok else "err"

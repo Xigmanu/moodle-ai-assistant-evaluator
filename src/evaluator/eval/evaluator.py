@@ -66,20 +66,28 @@ class Evaluator:
     def evaluate(
         self, exchanges: list[PipelineExchange], exp_id: str, eval_metadata: EvaluationMetadata
     ) -> list[EvaluationResult]:
-        logger.info("Experiment '%s': Starting evaluation", exp_id)
+        logger.info("Experiment '%s': Evaluating", exp_id)
 
         cancel_event = threading.Event()
         results: dict[int, list[MetricResult | None]] = {}
         futures: dict[Future[MetricResult], tuple[int, int]] = {}
 
+        t_name_pref = f"eval-{exp_id}"
+        logger.debug(
+            "Threadpool conf: max_workers=%d, thread_name_prefix='%s'",
+            self._max_workers,
+            t_name_pref,
+        )
         with ThreadPoolExecutor(
-            max_workers=self._max_workers, thread_name_prefix=f"eval-{exp_id}"
+            max_workers=self._max_workers, thread_name_prefix=t_name_pref
         ) as pool:
             for case_i, exch in enumerate(exchanges):
-                metrics = self._prepare_case(exch, exp_id, eval_metadata)
+                logger.debug("Case '%s': Building metrics", exch.case.id)
+                metrics = self._build_metrics(exch, exp_id, eval_metadata)
 
                 results[case_i] = [None] * len(metrics)
 
+                logger.debug("Case '%s': Building DeepEval test case", exch.case.id)
                 test_case = self._build_test_case(exch)
 
                 for metric_i, metric in enumerate(metrics):
@@ -135,7 +143,7 @@ class Evaluator:
             context=exch.rag_chunks,
         )
 
-    def _prepare_case(
+    def _build_metrics(
         self, exch: PipelineExchange, exp_id: str, eval_metadata: EvaluationMetadata
     ) -> list[BaseMetric]:
         if not exch.rag_chunks:
@@ -153,7 +161,33 @@ class Evaluator:
             case_id=exch.case.id,
         )
 
-        metrics = self._build_metrics(judge)
+        metrics: list[BaseMetric] = [
+            AnswerRelevancyMetric(
+                threshold=self._threshold, verbose_mode=False, model=judge, async_mode=False
+            ),
+            GEval(
+                name="Correctness",
+                criteria=(
+                    "Determine whether the actual output is factually correct and "
+                    "semantically equivalent to the expected output. "
+                    "Award a high score when the core facts match, even if wording differs."
+                ),
+                evaluation_params=[
+                    SingleTurnParams.INPUT,
+                    SingleTurnParams.ACTUAL_OUTPUT,
+                    SingleTurnParams.EXPECTED_OUTPUT,
+                ],
+                threshold=self._threshold,
+                verbose_mode=False,
+                model=judge,
+                async_mode=False,
+            ),
+            # RAG metrics
+            ContextualPrecisionMetric(threshold=self._threshold, model=judge, async_mode=False),
+            ContextualRecallMetric(threshold=self._threshold, model=judge, async_mode=False),
+            FaithfulnessMetric(threshold=self._threshold, model=judge, async_mode=False),
+            HallucinationMetric(threshold=self._threshold, model=judge, async_mode=False),
+        ]
 
         if not eval_metadata.metrics:
             eval_metadata.metrics.extend(self._metric_name(metric) for metric in metrics)
@@ -180,18 +214,16 @@ class Evaluator:
             except Exception as e:
                 last_err = e
                 logger.warning(
-                    "(%d/%d) Experiment '%s', case '%s': Metric '%s' finished exceptionally",
+                    "[%d/%d] Case '%s': Metric '%s' finished exceptionally",
                     attempt,
                     self._max_attempts,
-                    exp_id,
                     case_id,
                     name,
                 )
                 continue
 
             logger.info(
-                "Experiment '%s', case '%s': Successfully measured '%s': score=%s, is_success=%s",
-                exp_id,
+                "Case '%s': Successfully measured '%s': score=%s, is_success=%s",
                 case_id,
                 name,
                 "unknown" if metric.score is None else f"{metric.score:.4f}",
@@ -206,7 +238,7 @@ class Evaluator:
                 error=None,
             )
 
-        logger.error("Experiment '%s', case '%s': Failed to measure '%s'", exp_id, case_id, name)
+        logger.error("Case '%s': Failed to measure '%s'", case_id, name)
         return MetricResult(
             name=name,
             score=None,
@@ -215,32 +247,3 @@ class Evaluator:
             reason=getattr(metric, "reason", "") or "",
             error=str(last_err),
         )
-
-    def _build_metrics(self, model: DeepEvalJudgeModel) -> list[BaseMetric]:
-        return [
-            AnswerRelevancyMetric(
-                threshold=self._threshold, verbose_mode=False, model=model, async_mode=False
-            ),
-            GEval(
-                name="Correctness",
-                criteria=(
-                    "Determine whether the actual output is factually correct and "
-                    "semantically equivalent to the expected output. "
-                    "Award a high score when the core facts match, even if wording differs."
-                ),
-                evaluation_params=[
-                    SingleTurnParams.INPUT,
-                    SingleTurnParams.ACTUAL_OUTPUT,
-                    SingleTurnParams.EXPECTED_OUTPUT,
-                ],
-                threshold=self._threshold,
-                verbose_mode=False,
-                model=model,
-                async_mode=False,
-            ),
-            # RAG metrics
-            ContextualPrecisionMetric(threshold=self._threshold, model=model, async_mode=False),
-            ContextualRecallMetric(threshold=self._threshold, model=model, async_mode=False),
-            FaithfulnessMetric(threshold=self._threshold, model=model, async_mode=False),
-            HallucinationMetric(threshold=self._threshold, model=model, async_mode=False),
-        ]

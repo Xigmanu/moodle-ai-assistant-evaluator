@@ -10,6 +10,9 @@ class RetryBehavior:
     max_retries: int
     retry_interval: int
 
+    def as_pretty_str(self) -> str:
+        return f"\tMAX_RETRIES: '{self.max_retries}'\n" f"\tRETRY_INTERVAL: '{self.retry_interval}'"
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -22,6 +25,18 @@ class ModelConfig:
     max_tokens: int | None
     reasoning_strength: str | None
 
+    def as_pretty_str(self) -> str:
+        return (
+            f"\tNAME: '{self.name}'\n"
+            f"\tBASE_URL: '{self.base_url}'\n"
+            f"\tRPM: '{self.rpm}'\n"
+            f"\tTEMPERATURE: '{self.temperature}'\n"
+            f"\tTOP_P: '{self.top_p}'\n"
+            f"\tSEED: '{self.seed}'\n"
+            f"\tMAX_TOKENS: '{self.max_tokens}'\n"
+            f"\tREASONING_STRENGTH: '{self.reasoning_strength}'"
+        )
+
 
 @dataclass(frozen=True)
 class GlobalConfig:
@@ -32,28 +47,15 @@ class GlobalConfig:
     on_server_error_behavior: RetryBehavior
     on_socket_error_behavior: RetryBehavior
 
-    def pretty_print(self) -> str:
-        def format_model(label: str, model: ModelConfig) -> str:
-            return (
-                f"{label}:\n"
-                f"    NAME: '{model.name}'\n"
-                f"    BASE_URL: '{model.base_url}'\n"
-                f"    RPM: '{model.rpm}'\n"
-                f"    TEMPERATURE: '{model.temperature}'\n"
-                f"    TOP_P: '{model.top_p}'\n"
-                f"    SEED: '{model.seed}'\n"
-                f"    MAX_TOKENS: '{model.max_tokens}'\n"
-                f"    REASONING_STRENGTH: '{model.reasoning_strength}'"
-            )
-
+    def as_pretty_str(self) -> str:
         return (
             f"TEST_THRESHOLD: '{self.test_threshold}'\n"
             f"MAX_CONCURRENT_TEST_CASE_EVALUATIONS: "
             f"'{self.max_concurrent_test_case_evaluations}'\n"
-            f"ON_SERVER_ERROR_BEHAVIOR: '{self.on_server_error_behavior}'\n"
-            f"ON_SOCKET_ERROR_BEHAVIOR: '{self.on_socket_error_behavior}'\n"
-            f"{format_model('GEN_MODEL', self.gen_model)}\n"
-            f"{format_model('EVAL_MODEL', self.eval_model)}"
+            f"ON_SERVER_ERROR_BEHAVIOR:\n{self.on_server_error_behavior.as_pretty_str()}\n"
+            f"ON_SOCKET_ERROR_BEHAVIOR:\n{self.on_socket_error_behavior.as_pretty_str()}\n"
+            f"GEN_MODEL:\n{self.gen_model.as_pretty_str()}\n"
+            f"EVAL_MODEL:\n{self.eval_model.as_pretty_str()}"
         )
 
 
@@ -66,7 +68,7 @@ class ExperimentConfig:
     collections: str
     sys_prompt_override: str | None
 
-    def pretty_print(self) -> str:
+    def as_pretty_str(self) -> str:
         return f"ID: '{self.id}'\nNAME: '{self.man_name}'\nRETRIEVAL: '{self.retrieval}'\nIS_CROSS_ENCODER_RERANK: '{self.is_cross_encoder_rerank}'\nCOLLECTIONS: '{self.collections}'\nSYS_PROMPT_OVERRIDE: '{self.sys_prompt_override}'"
 
 
