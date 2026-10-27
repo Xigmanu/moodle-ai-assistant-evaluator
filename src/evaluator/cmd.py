@@ -142,6 +142,7 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     input_path = Path(args.input).resolve()
     test_cases = load_test_cases(input_path)
     flags = ExecutionFlags(is_verbose=args.is_verbose, is_align=args.is_align)
+    logger.debug("Execution flags: %s", flags)
     runner = EvaluationRunner(
         ws=ws, sys_prompt=prompt, test_cases=test_cases, flags=flags
     )
