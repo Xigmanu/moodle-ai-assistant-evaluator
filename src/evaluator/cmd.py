@@ -11,7 +11,7 @@ from tabulate import tabulate
 from .data import EvaluationStatus, Workspace
 from .data.catalogue import load_test_cases
 from .data.export import merge_experiment_results
-from .runner import EvaluationRunner
+from .runner import EvaluationRunner, ExecutionFlags
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,12 @@ def _init_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If set, writes LLM API exchange dumps into evaluation output directory",
     )
+    run_cmd.add_argument(
+        "--align",
+        dest="is_align",
+        action="store_true",
+        help="If set, performs golden alignment as a part of evaluation preprocessing"
+    )
     run_cmd.set_defaults(handler=_cmd_run)
 
     results_cmd = commands.add_parser("results", help="Inspect and manage past evaluations")
@@ -135,8 +141,9 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
 
     input_path = Path(args.input).resolve()
     test_cases = load_test_cases(input_path)
+    flags = ExecutionFlags(is_verbose=args.is_verbose, is_align=args.is_align)
     runner = EvaluationRunner(
-        ws=ws, sys_prompt=prompt, test_cases=test_cases, is_verbose=args.is_verbose
+        ws=ws, sys_prompt=prompt, test_cases=test_cases, flags=flags
     )
 
     return runner.run_evaluation(eval_metadata=eval_metadata)

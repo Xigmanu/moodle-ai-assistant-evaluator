@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from dataclasses import dataclass
 
 from pydantic import SecretStr
 
@@ -28,6 +29,10 @@ from .pipeline.collect import rag_req_body_builder
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class ExecutionFlags:
+    is_verbose: bool
+    is_align: bool
 
 class EvaluationRunner:
     def __init__(
@@ -35,12 +40,12 @@ class EvaluationRunner:
         ws: Workspace,
         sys_prompt: str,
         test_cases: list[TestCase],
-        is_verbose: bool,
+        flags: ExecutionFlags
     ):
         self._ws = ws
         self._sys_prompt = sys_prompt
         self._test_cases = test_cases
-        self._is_verbose = is_verbose
+        self._flags = flags
 
     def _new_client(
         self,
@@ -53,7 +58,7 @@ class EvaluationRunner:
             model=model,
             on_server_error_behavior=self._ws.global_config.on_server_error_behavior,
             on_socket_error_behavior=self._ws.global_config.on_socket_error_behavior,
-            is_verbose=self._is_verbose,
+            is_verbose=self._flags.is_verbose,
         )
         limiter = RateLimiter(model.rpm)
 
@@ -120,8 +125,11 @@ class EvaluationRunner:
             answer, chunks = collector.collect(
                 sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id
             )
-            aligned = aligner.format(sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id)
-            exchanges.append(PipelineExchange(case=aligned, llm_response=answer, rag_chunks=chunks))
+            if self._flags.is_align:
+                aligned = aligner.format(sample=answer, test_case=test_case, exp_id=exp.id)
+                exchanges.append(PipelineExchange(case=aligned, llm_response=answer, rag_chunks=chunks))
+            else:
+                exchanges.append(PipelineExchange(case=test_case, llm_response=answer, rag_chunks=chunks))
             logger.info("[%d/%d] Processed test case '%s'", i + 1, total, test_case.id)
 
         eval_results = evaluator.evaluate(

@@ -11,9 +11,9 @@ class GoldenAligner:
         self._client = client
 
     @staticmethod
-    def _build_prompt(golden: str, sys_prompt: str) -> str:
+    def _build_prompt(golden: str, sample: str) -> str:
         TASK = "Formatiere den folgenden **TEXT** entsprechend dem folgenden **FORMAT** neu. Gebe NUR den formatierten Text zurück!"
-        return f"# Aufgabe\n\n{TASK}\n\n## TEXT\n\n{golden}\n\n## FORMAT\n\n{sys_prompt}"
+        return f"# Aufgabe\n\n{TASK}\n\n## TEXT\n\n{golden}\n\n## FORMAT\n\n{sample}"
 
     @staticmethod
     def _extract_message_content(resp: dict, case_id: str) -> str:
@@ -27,8 +27,8 @@ class GoldenAligner:
 
         return content
 
-    def format(self, sys_prompt: str, test_case: TestCase, exp_id: str) -> TestCase:
-        prompt = self._build_prompt(golden=test_case.exp_answer, sys_prompt=sys_prompt)
+    def format(self, sample: str, test_case: TestCase, exp_id: str) -> TestCase:
+        prompt = self._build_prompt(golden=test_case.exp_answer, sample=sample)
 
         ctx = RequestContext(exp_id=exp_id, case_id=test_case.id, group=RequestGroup.ALIGN)
 
