@@ -1,0 +1,7 @@
+id: PI_VOLA_SP_CE
+man_name: "TODO"
+retrieval: "sparse"
+is_cross_encoder_rerank: true
+collections:
+  - hollstein_collection_labor
+  - hollstein_collection_vorlesung
