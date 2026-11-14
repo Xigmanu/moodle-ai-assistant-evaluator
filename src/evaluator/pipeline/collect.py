@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class PipelineExchange:
     case: TestCase
-    llm_response: str
-    rag_chunks: list[str]
+    llm_response: list[str]
+    rag_chunks: list[list[str]]
 
 
 def rag_req_body_builder(

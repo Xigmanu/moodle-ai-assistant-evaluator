@@ -1,7 +1,7 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from dataclasses import dataclass
 
 from pydantic import SecretStr
 
@@ -24,23 +24,22 @@ from .data import (
 )
 from .data.export import export_experiment_results, merge_experiment_results
 from .eval import EvaluationCancelled, Evaluator, eval_req_body_builder
+from .eval.evaluator import EVAL_ITER_NUM
 from .pipeline import PipelineExchange, SingleTurnCollector
 from .pipeline.collect import rag_req_body_builder
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ExecutionFlags:
     is_verbose: bool
     is_align: bool
 
+
 class EvaluationRunner:
     def __init__(
-        self,
-        ws: Workspace,
-        sys_prompt: str,
-        test_cases: list[TestCase],
-        flags: ExecutionFlags
+        self, ws: Workspace, sys_prompt: str, test_cases: list[TestCase], flags: ExecutionFlags
     ):
         self._ws = ws
         self._sys_prompt = sys_prompt
@@ -122,14 +121,24 @@ class EvaluationRunner:
         total = len(self._test_cases)
         logger.info("Processing loaded test cases")
         for i, test_case in enumerate(self._test_cases):
-            answer, chunks = collector.collect(
-                sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id
-            )
+            answer_buf: list[str] = []
+            chunks_buf: list[list[str]] = []
+            for n in range(EVAL_ITER_NUM):
+                answer, chunks = collector.collect(
+                    sys_prompt=sys_prompt, test_case=test_case, exp_id=exp.id
+                )
+                answer_buf.append(answer)
+                chunks_buf.append(chunks)
+
             if self._flags.is_align:
-                aligned = aligner.format(sample=answer, test_case=test_case, exp_id=exp.id)
-                exchanges.append(PipelineExchange(case=aligned, llm_response=answer, rag_chunks=chunks))
+                aligned = aligner.format(samples=answer_buf, test_case=test_case, exp_id=exp.id)
+                exchanges.append(
+                    PipelineExchange(case=aligned, llm_response=answer_buf, rag_chunks=chunks_buf)
+                )
             else:
-                exchanges.append(PipelineExchange(case=test_case, llm_response=answer, rag_chunks=chunks))
+                exchanges.append(
+                    PipelineExchange(case=test_case, llm_response=answer_buf, rag_chunks=chunks_buf)
+                )
             logger.info("[%d/%d] Processed test case '%s'", i + 1, total, test_case.id)
 
         eval_results = evaluator.evaluate(

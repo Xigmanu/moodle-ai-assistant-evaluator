@@ -12,7 +12,7 @@ from deepeval.metrics import (
     GEval,
     HallucinationMetric,
 )
-from deepeval.test_case import LLMTestCase, RetrievedContextData, SingleTurnParams
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
 from ..common.client import (
     RateLimitedLLMClient,
@@ -23,11 +23,13 @@ from .judge import DeepEvalJudgeModel
 
 logger = logging.getLogger(__name__)
 
+EVAL_ITER_NUM = 3
+
 
 @dataclass(frozen=True)
 class MetricResult:
     name: str
-    score: float | None
+    score: float
     threshold: float
     success: bool
     reason: str
@@ -88,13 +90,13 @@ class Evaluator:
                 results[case_i] = [None] * len(metrics)
 
                 logger.debug("Case '%s': Building DeepEval test case", exch.case.id)
-                test_case = self._build_test_case(exch)
+                test_cases = self._build_test_cases(exch)
 
                 for metric_i, metric in enumerate(metrics):
                     future = pool.submit(
-                        self._measure,
+                        self._measure_n,
                         metric,
-                        test_case,
+                        test_cases,
                         case_id=exch.case.id,
                         exp_id=exp_id,
                         cancel_event=cancel_event,
@@ -132,16 +134,20 @@ class Evaluator:
         return getattr(metric, "__name__", type(BaseMetric).__name__)
 
     @staticmethod
-    def _build_test_case(exch: PipelineExchange) -> LLMTestCase:
-        retrieval_context: list[str | RetrievedContextData] = list(exch.rag_chunks)
-        return LLMTestCase(
-            input=exch.case.query,
-            actual_output=exch.llm_response,
-            expected_output=exch.case.exp_answer,
-            name=exch.case.test_case_name,
-            retrieval_context=retrieval_context,
-            context=exch.rag_chunks,
-        )
+    def _build_test_cases(exch: PipelineExchange) -> list[LLMTestCase]:
+        cases: list[LLMTestCase] = []
+        for i in range(EVAL_ITER_NUM):
+            cases.append(
+                LLMTestCase(
+                    input=exch.case.query,
+                    actual_output=exch.llm_response[i],
+                    expected_output=exch.case.exp_answer,
+                    name=exch.case.test_case_name,
+                    retrieval_context=list(exch.rag_chunks[i]),
+                    context=exch.rag_chunks[i],
+                )
+            )
+        return cases
 
     def _build_metrics(
         self, exch: PipelineExchange, exp_id: str, eval_metadata: EvaluationMetadata
@@ -231,7 +237,7 @@ class Evaluator:
             )
             return MetricResult(
                 name=name,
-                score=metric.score,
+                score=metric.score if metric.score is not None else 0.0,
                 threshold=self._threshold,
                 success=bool(metric.success),
                 reason=metric.reason or "",
@@ -241,9 +247,37 @@ class Evaluator:
         logger.error("Case '%s': Failed to measure '%s'", case_id, name)
         return MetricResult(
             name=name,
-            score=None,
+            score=0.0,
             threshold=self._threshold,
             success=False,
             reason=getattr(metric, "reason", "") or "",
             error=str(last_err),
+        )
+
+    def _measure_n(
+        self,
+        metric: BaseMetric,
+        test_cases: list[LLMTestCase],
+        case_id: str,
+        exp_id: str,
+        cancel_event: threading.Event,
+    ) -> MetricResult:
+        results = [self._measure(metric, tc, case_id, exp_id, cancel_event) for tc in test_cases]
+        score_mean = 0.0
+        combined_reason: list[str] = []
+        combined_errors: list[str] = []
+        for r in results:
+            score_mean += r.score
+            combined_reason.append(r.reason)
+            combined_errors.append(r.error if r.error is not None else "NONE")
+        score_mean = score_mean / EVAL_ITER_NUM
+
+        assert metric.threshold is not None
+        return MetricResult(
+            name=self._metric_name(metric),
+            score=score_mean,
+            threshold=metric.threshold,
+            success=score_mean >= metric.threshold,
+            reason="|".join(combined_reason),
+            error="|".join(combined_errors),
         )

@@ -86,7 +86,7 @@ def _init_arg_parser() -> argparse.ArgumentParser:
         "--align",
         dest="is_align",
         action="store_true",
-        help="If set, performs golden alignment as a part of evaluation preprocessing"
+        help="If set, performs golden alignment as a part of evaluation preprocessing",
     )
     run_cmd.set_defaults(handler=_cmd_run)
 
@@ -143,9 +143,7 @@ def _cmd_run(args: argparse.Namespace, ws: Workspace) -> int:
     test_cases = load_test_cases(input_path)
     flags = ExecutionFlags(is_verbose=args.is_verbose, is_align=args.is_align)
     logger.debug("Execution flags: %s", flags)
-    runner = EvaluationRunner(
-        ws=ws, sys_prompt=prompt, test_cases=test_cases, flags=flags
-    )
+    runner = EvaluationRunner(ws=ws, sys_prompt=prompt, test_cases=test_cases, flags=flags)
 
     return runner.run_evaluation(eval_metadata=eval_metadata)
 
