@@ -2,6 +2,7 @@ import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from statistics import mean
 
 from deepeval.metrics import (
     AnswerRelevancyMetric,
@@ -263,15 +264,13 @@ class Evaluator:
         cancel_event: threading.Event,
     ) -> MetricResult:
         results = [self._measure(metric, tc, case_id, exp_id, cancel_event) for tc in test_cases]
-        score_mean = 0.0
         combined_reason: list[str] = []
         combined_errors: list[str] = []
         for r in results:
-            score_mean += r.score
             combined_reason.append(r.reason)
             combined_errors.append(r.error if r.error is not None else "NONE")
-        score_mean = score_mean / EVAL_ITER_NUM
 
+        score_mean = mean([r.score for r in results])
         assert metric.threshold is not None
         return MetricResult(
             name=self._metric_name(metric),
