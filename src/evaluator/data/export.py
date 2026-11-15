@@ -335,7 +335,7 @@ def export_experiment_results(
             QUERY_TOPIC: case.query_topic,
             QUERY_COL: case.query,
             ANSWER_COL: case.exp_answer,
-            _ACTUAL_OUTPUT_COL: exch.llm_response,
+            _ACTUAL_OUTPUT_COL: "\n---\n".join(exch.llm_response),
         }
 
         for metric in res.metrics:
